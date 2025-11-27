@@ -2,16 +2,32 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+type SpeechRecognitionEventLike = {
+  results: ArrayLike<{
+    0: {
+      transcript: string;
+    };
+  }>;
+  error?: string;
+};
+
+type SpeechRecognitionInstance = {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
+  onend: (() => void) | null;
+  onerror: ((event: SpeechRecognitionEventLike) => void) | null;
+  start: () => void;
+  stop: () => void;
+};
+
+type SpeechRecognitionConstructor = new () => SpeechRecognitionInstance;
+
 declare global {
   interface Window {
-    SpeechRecognition?: typeof globalThis extends { SpeechRecognition: infer T }
-      ? T
-      : undefined;
-    webkitSpeechRecognition?: typeof globalThis extends {
-      SpeechRecognition: infer T;
-    }
-      ? T
-      : undefined;
+    SpeechRecognition?: SpeechRecognitionConstructor;
+    webkitSpeechRecognition?: SpeechRecognitionConstructor;
   }
 }
 
@@ -34,18 +50,6 @@ const base64ToArrayBuffer = (binary: string) => {
   return bytes.buffer;
 };
 
-type BrowserSpeechRecognition =
-  typeof globalThis extends { SpeechRecognition: infer T }
-    ? T
-    : typeof globalThis extends { webkitSpeechRecognition: infer U }
-    ? U
-    : any;
-
-type BrowserSpeechRecognitionEvent =
-  typeof globalThis extends { SpeechRecognitionEvent: infer T }
-    ? T
-    : Event;
-
 export default function Home() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -64,11 +68,12 @@ export default function Home() {
   const [micClicks, setMicClicks] = useState(0);
   const [deviceLabel, setDeviceLabel] = useState<string | null>(null);
   const [listening, setListening] = useState(false);
-  const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
+  const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
   const [cooldownUntil, setCooldownUntil] = useState(0);
   const [lastSpoken, setLastSpoken] = useState<string>("");
   const hasGreetedRef = useRef(false);
   const [micReady, setMicReady] = useState(false);
+  const [audioUnlocked, setAudioUnlocked] = useState(false);
 
   const recordAction = useCallback(
     (message: string) => {
@@ -95,10 +100,14 @@ export default function Home() {
     setListening(true);
 
     const SpeechRecognitionCtor =
-      (window as typeof window & { SpeechRecognition?: BrowserSpeechRecognition })
-        .SpeechRecognition ||
-      (window as typeof window & { webkitSpeechRecognition?: BrowserSpeechRecognition })
-        .webkitSpeechRecognition;
+      (window as typeof window & {
+        SpeechRecognition?: SpeechRecognitionConstructor;
+        webkitSpeechRecognition?: SpeechRecognitionConstructor;
+      }).SpeechRecognition ||
+      (window as typeof window & {
+        SpeechRecognition?: SpeechRecognitionConstructor;
+        webkitSpeechRecognition?: SpeechRecognitionConstructor;
+      }).webkitSpeechRecognition;
 
     if (!SpeechRecognitionCtor) {
       setStatus("Speech recognition is unavailable.");
@@ -111,8 +120,8 @@ export default function Home() {
     recognition.interimResults = false;
     recognition.lang = "en-GB";
 
-    recognition.onresult = async (event: BrowserSpeechRecognitionEvent) => {
-      const transcript = (event as any).results[0][0].transcript;
+    recognition.onresult = async (event: SpeechRecognitionEventLike) => {
+      const transcript = event.results[0][0].transcript;
       console.log("spoken transcript:", transcript);
       try {
         const qaResponse = await fetch("/api/qa", {
@@ -179,8 +188,8 @@ export default function Home() {
       }
     };
 
-    recognition.onerror = (event: BrowserSpeechRecognitionEvent & { error?: string }) => {
-      console.error("Speech recognition error", (event as any).error);
+    recognition.onerror = (event: SpeechRecognitionEventLike) => {
+      console.error("Speech recognition error", event.error);
       setStatus("Speech recognition error.");
       setListening(false);
     };
@@ -224,7 +233,28 @@ export default function Home() {
   }, [recordAction]);
 
   useEffect(() => {
-    if (hasGreetedRef.current) return;
+    if (typeof navigator === "undefined") return;
+    const requiresGesture = /iPad|iPhone|iPod/i.test(navigator.userAgent);
+    if (!requiresGesture) {
+      setAudioUnlocked(true);
+      return;
+    }
+    setStatus("Tap once to enable FIX IT audio, then hold up a device.");
+    const unlock = () => {
+      setAudioUnlocked(true);
+      document.removeEventListener("pointerdown", unlock);
+      document.removeEventListener("touchstart", unlock);
+    };
+    document.addEventListener("pointerdown", unlock);
+    document.addEventListener("touchstart", unlock);
+    return () => {
+      document.removeEventListener("pointerdown", unlock);
+      document.removeEventListener("touchstart", unlock);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (hasGreetedRef.current || !audioUnlocked) return;
     hasGreetedRef.current = true;
     (async () => {
       try {
@@ -260,7 +290,7 @@ export default function Home() {
         setMicReady(true);
       }
     })();
-  }, []);
+  }, [audioUnlocked]);
 
   useEffect(() => {
     const currentAudio = audioRef.current;
