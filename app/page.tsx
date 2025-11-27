@@ -56,6 +56,7 @@ export default function Home() {
   const streamRef = useRef<MediaStream | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const voiceUrlRef = useRef<string | null>(null);
+  const speechQueueRef = useRef<Promise<void>>(Promise.resolve());
   const [status, setStatus] = useState(
     "Auto detection standing by—point at a device."
   );
@@ -80,6 +81,69 @@ export default function Home() {
       setRecentActions((prev) => [...prev.slice(-3), message]);
     },
     [setRecentActions]
+  );
+
+  const playVoiceLine = useCallback(
+    async (line: string) => {
+      const trimmed = line.trim();
+      if (!trimmed) return;
+      try {
+        const voiceResponse = await fetch("/api/voice", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ text: trimmed }),
+        });
+        const voiceData = await voiceResponse.json();
+        if (!voiceResponse.ok || !voiceData.audio) {
+          throw new Error("Voice synthesis failed.");
+        }
+        const audioBuffer = base64ToArrayBuffer(voiceData.audio);
+        const blob = new Blob([audioBuffer], {
+          type: voiceData.mime ?? "audio/mpeg",
+        });
+        if (voiceUrlRef.current) {
+          URL.revokeObjectURL(voiceUrlRef.current);
+        }
+        const audioUrl = URL.createObjectURL(blob);
+        voiceUrlRef.current = audioUrl;
+        const audioElement = audioRef.current;
+        if (audioElement) {
+          audioElement.src = audioUrl;
+          setAudioPlaying(true);
+          await audioElement.play().catch((err) => {
+            console.error("Voice playback failed", err);
+          });
+          await new Promise<void>((resolve) => {
+            if (!audioElement) {
+              resolve();
+              return;
+            }
+            const handleEnded = () => {
+              audioElement.removeEventListener("ended", handleEnded);
+              resolve();
+            };
+            audioElement.addEventListener("ended", handleEnded, { once: true });
+          });
+        }
+      } catch (error) {
+        console.error(error);
+        setStatus("Voice playback failed.");
+      }
+    },
+    [setStatus]
+  );
+
+  const enqueueSpeech = useCallback(
+    (line: string) => {
+      const trimmed = line.trim();
+      if (!trimmed) return;
+      speechQueueRef.current = speechQueueRef.current
+        .catch(() => {})
+        .then(() => playVoiceLine(trimmed));
+    },
+    [playVoiceLine]
   );
 
   const handleMicClick = useCallback(() => {
@@ -124,6 +188,7 @@ export default function Home() {
       const transcript = event.results[0][0].transcript;
       console.log("spoken transcript:", transcript);
       try {
+        recordAction(`Asked about ${deviceLabel}`);
         const qaResponse = await fetch("/api/qa", {
           method: "POST",
           headers: {
@@ -134,43 +199,75 @@ export default function Home() {
             transcript,
           }),
         });
-        const qaData = await qaResponse.json();
-        if (!qaResponse.ok) {
-          throw new Error(qaData.error ?? "QA request failed.");
+
+        if (!qaResponse.ok || !qaResponse.body) {
+          const qaError = await qaResponse
+            .json()
+            .catch(() => ({ error: "QA request failed." }));
+          throw new Error(qaError.error ?? "QA request failed.");
         }
 
-        const answer = qaData.answer ?? "I couldn't find an answer right now.";
-        setStatus(answer);
-        recordAction(`Asked about ${deviceLabel}`);
+        const reader = qaResponse.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let aggregated = "";
+        let consumedLength = 0;
 
-        const voiceResponse = await fetch("/api/voice", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ text: answer }),
-        });
-        const voiceData = await voiceResponse.json();
-        if (!voiceResponse.ok || !voiceData.audio) {
-          throw new Error("Voice synthesis failed.");
+        const flushSentences = (force = false) => {
+          const sentenceRegex = /[^.!?]+[.!?]/g;
+          sentenceRegex.lastIndex = consumedLength;
+          let match = sentenceRegex.exec(aggregated);
+          while (match) {
+            consumedLength = match.index + match[0].length;
+            enqueueSpeech(match[0]);
+            match = sentenceRegex.exec(aggregated);
+          }
+          if (force) {
+            const remainder = aggregated.slice(consumedLength).trim();
+            if (remainder) {
+              enqueueSpeech(remainder);
+              consumedLength = aggregated.length;
+            }
+          }
+        };
+
+        setStatus("Assistant is replying...");
+
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          let boundary = buffer.indexOf("\n\n");
+          while (boundary !== -1) {
+            const chunk = buffer.slice(0, boundary).trim();
+            buffer = buffer.slice(boundary + 2);
+            boundary = buffer.indexOf("\n\n");
+            if (!chunk.startsWith("data:")) continue;
+            const payloadRaw = chunk.slice(5).trim();
+            if (!payloadRaw || payloadRaw === "[DONE]") continue;
+            try {
+              const payload = JSON.parse(payloadRaw);
+              if (payload.error) {
+                throw new Error(payload.error);
+              }
+              if (typeof payload.delta === "string") {
+                aggregated += payload.delta;
+                setStatus(aggregated);
+                flushSentences();
+              }
+              if (payload.done) {
+                flushSentences(true);
+              }
+            } catch (err) {
+              throw err instanceof Error
+                ? err
+                : new Error("Malformed stream payload.");
+            }
+          }
         }
-        const audioBuffer = base64ToArrayBuffer(voiceData.audio);
-        const blob = new Blob([audioBuffer], {
-          type: voiceData.mime ?? "audio/mpeg",
-        });
-        if (voiceUrlRef.current) {
-          URL.revokeObjectURL(voiceUrlRef.current);
-        }
-        const audioUrl = URL.createObjectURL(blob);
-        voiceUrlRef.current = audioUrl;
-        if (audioRef.current) {
-          audioRef.current.src = audioUrl;
-          await audioRef.current.play();
-        }
-        setAudioPlaying(true);
-        setLastSpoken(answer);
-        setCooldownUntil(performance.now() + 4000);
-        setStatus("Answer delivered. Toggle the mic when you want to stop.");
+
+        setLastSpoken(aggregated);
+        setCooldownUntil(performance.now() + 2000);
         if (listening) {
           recognition.start();
         }
@@ -196,7 +293,7 @@ export default function Home() {
 
     recognitionRef.current = recognition;
     recognition.start();
-  }, [recognizedDevice, deviceLabel, listening, recordAction]);
+  }, [recognizedDevice, deviceLabel, listening, recordAction, enqueueSpeech]);
 
   useEffect(() => {
     const startCamera = async () => {
