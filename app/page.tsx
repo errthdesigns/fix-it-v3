@@ -75,6 +75,7 @@ export default function Home() {
   const hasGreetedRef = useRef(false);
   const [micReady, setMicReady] = useState(false);
   const [audioUnlocked, setAudioUnlocked] = useState(false);
+  const [needsAudioUnlock, setNeedsAudioUnlock] = useState(false);
 
   const recordAction = useCallback(
     (message: string) => {
@@ -336,19 +337,16 @@ export default function Home() {
       setAudioUnlocked(true);
       return;
     }
-    setStatus("Tap once to enable FIX IT audio, then hold up a device.");
-    const unlock = () => {
-      setAudioUnlocked(true);
-      document.removeEventListener("pointerdown", unlock);
-      document.removeEventListener("touchstart", unlock);
-    };
-    document.addEventListener("pointerdown", unlock);
-    document.addEventListener("touchstart", unlock);
-    return () => {
-      document.removeEventListener("pointerdown", unlock);
-      document.removeEventListener("touchstart", unlock);
-    };
+    setNeedsAudioUnlock(true);
+    setStatus("Tap Start to enable FIX IT audio, then hold up a device.");
   }, []);
+
+  const handleAudioUnlock = useCallback(() => {
+    if (audioUnlocked) return;
+    setAudioUnlocked(true);
+    setNeedsAudioUnlock(false);
+    setStatus("Audio unlocked—camera will announce when ready.");
+  }, [audioUnlocked]);
 
   useEffect(() => {
     if (hasGreetedRef.current || !audioUnlocked) return;
@@ -556,6 +554,15 @@ export default function Home() {
               <path d="M12 14c1.657 0 3-1.343 3-3V6a3 3 0 0 0-6 0v5c0 1.657 1.343 3 3 3zm5-3c0 2.761-2.239 5-5 5s-5-2.239-5-5H5c0 3.533 2.613 6.432 6 6.92V22h2v-4.08c3.387-.488 6-3.387 6-6.92h-2z" />
             </svg>
           </button>
+          {needsAudioUnlock && !audioUnlocked && (
+            <button
+              type="button"
+              onClick={handleAudioUnlock}
+              className="absolute bottom-20 left-1/2 z-30 -translate-x-1/2 rounded-full border border-white/60 bg-black/70 px-8 py-3 text-sm uppercase tracking-[0.3em] text-white shadow-lg transition hover:bg-black/90"
+            >
+              Start Audio
+            </button>
+          )}
           <div className="pointer-events-none absolute bottom-2 right-6 text-xs uppercase tracking-[0.3em] text-white/70">
             clicks: {micClicks}
           </div>
