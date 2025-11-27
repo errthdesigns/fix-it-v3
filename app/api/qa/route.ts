@@ -25,53 +25,12 @@ Rules:
 - Never mention being an AI, the camera, or the prompts. Keep answers natural and friendly.
 `;
 
-type ResponseChunk =
-  | string
-  | {
-      text?: string;
-      value?: string;
-    };
-
-type ResponseMessage = {
-  content?: ResponseChunk[];
-};
-
-const flattenOutputToText = (output?: ResponseMessage[]): string => {
-  const textParts = (output ?? []).flatMap((message) => {
-    return (message.content ?? []).flatMap((chunk) => {
-      if (typeof chunk === "string") {
-        return chunk;
-      }
-      if (chunk && typeof chunk === "object") {
-        if (typeof chunk.text === "string") {
-          return chunk.text;
-        }
-        if (typeof chunk.value === "string") {
-          return chunk.value;
-        }
-      }
-      return "";
-    });
-  });
-
-  return textParts.join(" ").replace(/```json/gi, "").replace(/```/g, "").trim();
-};
-
-const parseJsonSafely = (text: string) => {
-  const candidate = text.trim();
-  try {
-    return JSON.parse(candidate);
-  } catch {
-    const jsonMatch = candidate.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      try {
-        return JSON.parse(jsonMatch[0]);
-      } catch {
-        return null;
-      }
-    }
-  }
-  return null;
+const sendSseEvent = async (
+  writer: WritableStreamDefaultWriter<Uint8Array>,
+  payload: Record<string, unknown>
+) => {
+  const encoder = new TextEncoder();
+  await writer.write(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
 };
 
 export async function POST(request: Request) {
@@ -96,10 +55,10 @@ export async function POST(request: Request) {
 Detected device: ${deviceDescription ?? "Unknown device"}
 User: ${transcript}
 
-Respond with a short spoken-friendly instruction set and include the main answer inside a JSON object like {"answer": "..."}. Keep it scoped to the detected device.
+Respond with a short spoken-friendly instruction set. Stream back text chunks as they are ready.
 `;
 
-    const response = await fetch(OPENAI_ENDPOINT, {
+    const upstream = await fetch(OPENAI_ENDPOINT, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -110,6 +69,7 @@ Respond with a short spoken-friendly instruction set and include the main answer
         temperature: 0.2,
         max_output_tokens: 400,
         top_p: 0.95,
+        stream: true,
         input: [
           { role: "system", content: [{ type: "input_text", text: SYSTEM_PROMPT }] },
           { role: "user", content: [{ type: "input_text", text: userPrompt }] },
@@ -117,22 +77,97 @@ Respond with a short spoken-friendly instruction set and include the main answer
       }),
     });
 
-    const payload = await response.json();
-    if (!response.ok) {
+    if (!upstream.ok) {
+      const errorPayload = await upstream.json().catch(() => null);
       return NextResponse.json(
-        { error: payload?.error?.message ?? "OpenAI request failed." },
-        { status: response.status }
+        { error: errorPayload?.error?.message ?? "OpenAI request failed." },
+        { status: upstream.status }
       );
     }
 
-    const rawText = flattenOutputToText(payload.output ?? []);
-    const parsed = parseJsonSafely(rawText) ?? {};
-    const answer =
-      typeof parsed.answer === "string" && parsed.answer.trim().length > 0
-        ? parsed.answer.trim()
-        : rawText;
+    if (!upstream.body) {
+      return NextResponse.json(
+        { error: "OpenAI response stream was empty." },
+        { status: 500 }
+      );
+    }
 
-    return NextResponse.json({ answer });
+    const stream = new TransformStream();
+    const writer = stream.writable.getWriter();
+    const decoder = new TextDecoder();
+    const reader = upstream.body.getReader();
+
+    (async () => {
+      let buffer = "";
+      let fullText = "";
+      let doneEmitted = false;
+      try {
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          let boundary = buffer.indexOf("\n\n");
+          while (boundary !== -1) {
+            const chunk = buffer.slice(0, boundary).trim();
+            buffer = buffer.slice(boundary + 2);
+            boundary = buffer.indexOf("\n\n");
+            if (!chunk || !chunk.startsWith("data:")) {
+              continue;
+            }
+            const data = chunk.slice(5).trim();
+            if (!data || data === "[DONE]") {
+              continue;
+            }
+            try {
+              const parsed = JSON.parse(data);
+              if (
+                parsed.type === "response.output_text.delta" &&
+                typeof parsed.delta === "string"
+              ) {
+                fullText += parsed.delta;
+                await sendSseEvent(writer, { delta: parsed.delta });
+              } else if (parsed.type === "response.completed") {
+                await sendSseEvent(writer, { done: true, text: fullText });
+                doneEmitted = true;
+              } else if (parsed.type === "response.error") {
+                await sendSseEvent(writer, {
+                  error: parsed.error?.message ?? "OpenAI stream error.",
+                });
+                doneEmitted = true;
+              }
+            } catch (err) {
+              await sendSseEvent(writer, {
+                error:
+                  err instanceof Error
+                    ? err.message
+                    : "Failed to parse OpenAI stream chunk.",
+              });
+              doneEmitted = true;
+            }
+          }
+        }
+        if (!doneEmitted) {
+          await sendSseEvent(writer, { done: true, text: fullText });
+        }
+      } catch (err) {
+        await sendSseEvent(writer, {
+          error:
+            err instanceof Error
+              ? err.message
+              : "Unexpected error while streaming OpenAI output.",
+        });
+      } finally {
+        await writer.close();
+      }
+    })();
+
+    return new NextResponse(stream.readable, {
+      headers: {
+        "Content-Type": "text/event-stream",
+        Connection: "keep-alive",
+        "Cache-Control": "no-cache, no-transform",
+      },
+    });
   } catch (error) {
     console.error(error);
     const message =
