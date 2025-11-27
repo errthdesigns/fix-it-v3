@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 const OPENAI_ENDPOINT = "https://api.openai.com/v1/responses";
-const MODEL = "gpt-4.1";
+const MODEL = "gpt-4o-mini";
 
 const SYSTEM_PROMPT = `
 You are the vision and voice brain for an app called FIX IT. Mention brands/models whenever you are confident about them (e.g. “iPhone,” “Samsung TV”).
