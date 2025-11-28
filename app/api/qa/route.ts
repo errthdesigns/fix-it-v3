@@ -1,37 +1,35 @@
 import { NextResponse } from "next/server";
 
 const OPENAI_ENDPOINT = "https://api.openai.com/v1/chat/completions";
-const MODEL = "gpt-4o-mini";
+const MODEL = "gpt-4o";
 
 const SYSTEM_PROMPT = `You are FIX IT, a helpful tech support assistant. Keep ALL responses under 10 words.
 
-CRITICAL: When you see "Detected device: [device name]", that means we CAN SEE the device in the camera. Give device-specific help immediately. Do NOT ask to see it.
+You can SEE the camera image showing what the user is pointing at. Use visual context to answer questions about specific buttons, parts, or features they're showing you.
 
 RULES:
 1. CASUAL QUESTIONS: Respond briefly, then ask "What needs fixing?"
 2. TECH QUESTIONS:
-   - "Detected device: X" = Device IS visible, give specific answer
-   - "No device detected" = Ask to see device first
+   - Look at the image to see what they're pointing at
+   - Give specific help based on what you SEE
+   - If they say "this one" or "here", look at the image
 3. MAX 10 WORDS
 
 Examples:
 
-Detected device: Samsung TV
-User: "How do I connect to WiFi?"
-Answer: "Settings, Network, WiFi Setup."
+User shows remote close-up of power button: "This one?"
+Answer: "Yes, that's the power button."
 
-Detected device: iPhone 14 Pro
-User: "What charger?"
-Answer: "Lightning cable."
+User shows TV remote: "How to turn on TV?"
+Answer: "Press the red power button."
 
-No device detected yet
-User: "How do I connect to WiFi?"
-Answer: "Show me your device first."
+User shows phone: "How to charge?"
+Answer: "USB-C port on bottom."
 
 User: "How are you?"
 Answer: "Good! What needs fixing?"
 
-Be SHORT. Be HELPFUL.
+Be SHORT. Be HELPFUL. USE YOUR VISION.
 `;
 
 const sendSseEvent = async (
@@ -44,11 +42,12 @@ const sendSseEvent = async (
 
 export async function POST(request: Request) {
   try {
-    const { deviceDescription, transcript } = await request.json();
+    const { deviceDescription, transcript, image } = await request.json();
 
     console.log("🔧 QA API RECEIVED:");
     console.log("  deviceDescription:", deviceDescription);
     console.log("  transcript:", transcript);
+    console.log("  image:", image ? "yes" : "no");
 
     if (!transcript || typeof transcript !== "string") {
       return NextResponse.json(
@@ -65,15 +64,25 @@ export async function POST(request: Request) {
       );
     }
 
-    const userPrompt = deviceDescription
-      ? `Detected device: ${deviceDescription}
-User: ${transcript}`
-      : `No device detected yet
-User: ${transcript}`;
+    const textPrompt = deviceDescription
+      ? `Detected device: ${deviceDescription}\nUser: ${transcript}`
+      : `User: ${transcript}`;
 
-    console.log("📝 FULL PROMPT BEING SENT TO LLM:");
-    console.log(userPrompt);
+    console.log("📝 PROMPT TEXT:");
+    console.log(textPrompt);
     console.log("---");
+
+    // Build user message with vision if image is available
+    const userContent: Array<{ type: string; text?: string; image_url?: { url: string } }> = [
+      { type: "text", text: textPrompt }
+    ];
+
+    if (image && typeof image === "string") {
+      userContent.push({
+        type: "image_url",
+        image_url: { url: image }
+      });
+    }
 
     const upstream = await fetch(OPENAI_ENDPOINT, {
       method: "POST",
@@ -89,7 +98,7 @@ User: ${transcript}`;
         stream: true,
         messages: [
           { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: userPrompt },
+          { role: "user", content: userContent },
         ],
       }),
     });

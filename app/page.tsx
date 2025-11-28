@@ -216,6 +216,9 @@ export default function Home() {
         console.log("  Device:", deviceLabelRef.current || "null");
         console.log("  Question:", transcript);
 
+        // Capture current camera frame for visual context
+        const currentFrame = captureFrame();
+
         // Store for debug display
         setLastQARequest({
           device: deviceLabelRef.current,
@@ -230,6 +233,7 @@ export default function Home() {
           body: JSON.stringify({
             deviceDescription: deviceLabelRef.current || null,
             transcript,
+            image: currentFrame,
           }),
         });
 
