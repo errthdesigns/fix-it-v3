@@ -94,39 +94,48 @@ export async function POST(req: NextRequest) {
 
     const openai = new OpenAI({ apiKey });
 
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "text",
-              text: `Analyze this product image. Respond ONLY with valid JSON in this exact format (no markdown, no explanation):
+    let response;
+    try {
+      response = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: `Analyze this product image. Respond ONLY with valid JSON in this exact format (no markdown, no explanation):
 {
   "category": "product type in 2-3 words",
   "description": "concise description in 15-25 words",
   "highlights": ["feature 1", "feature 2", "feature 3"]
 }
 Keep it brief and accurate. Focus on visible features.`,
-            },
-            {
-              type: "image_url",
-              image_url: {
-                url: image,
-                detail: "low",
               },
-            },
-          ],
-        },
-      ],
-      max_tokens: 200,
-      temperature: 0.3,
-    });
+              {
+                type: "image_url",
+                image_url: {
+                  url: image,
+                  detail: "low",
+                },
+              },
+            ],
+          },
+        ],
+        max_tokens: 200,
+        temperature: 0.3,
+      });
+    } catch (apiError) {
+      console.error("OpenAI API error:", apiError);
+      throw new Error(
+        `OpenAI API call failed: ${apiError instanceof Error ? apiError.message : "Unknown error"}`
+      );
+    }
 
     const content = response.choices[0]?.message?.content as CompletionContent;
     if (!content) {
-      throw new Error("OpenAI returned an empty response.");
+      console.error("OpenAI response:", JSON.stringify(response, null, 2));
+      throw new Error("OpenAI returned an empty response. Check server logs for details.");
     }
 
     let serialized = "";
