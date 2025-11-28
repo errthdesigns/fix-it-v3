@@ -76,6 +76,7 @@ export default function Home() {
   const [audioUnlocked, setAudioUnlocked] = useState(false);
   const [needsAudioUnlock, setNeedsAudioUnlock] = useState(true);
   const isSpeakingRef = useRef(false);
+  const isStartingRecognitionRef = useRef(false);
 
   const recordAction = useCallback(
     (message: string) => {
@@ -150,8 +151,8 @@ export default function Home() {
   );
 
   const startListening = useCallback(() => {
-    if (listening) {
-      return; // Already listening
+    if (listening || isStartingRecognitionRef.current) {
+      return; // Already listening or starting
     }
 
     const SpeechRecognitionCtor =
@@ -169,6 +170,7 @@ export default function Home() {
       return;
     }
 
+    isStartingRecognitionRef.current = true;
     setListening(true);
     setStatus("Listening...");
     lastTranscriptRef.current = "";
@@ -182,10 +184,12 @@ export default function Home() {
       const result = event.results[event.results.length - 1];
       const interim = result[0]?.transcript?.trim() ?? "";
 
-      // If user starts speaking while AI is talking, stop the AI
-      if (isSpeakingRef.current && audioRef.current) {
+      // If user starts speaking while AI is talking, stop the AI immediately
+      if (isSpeakingRef.current && audioRef.current && !audioRef.current.paused) {
         audioRef.current.pause();
+        audioRef.current.currentTime = 0;
         isSpeakingRef.current = false;
+        setStatus("Listening...");
       }
 
       if (!result.isFinal) {
@@ -305,14 +309,27 @@ export default function Home() {
       }
     };
 
+    recognition.onstart = () => {
+      isStartingRecognitionRef.current = false;
+      // If AI is speaking when user starts talking, interrupt it
+      if (isSpeakingRef.current && audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0;
+        isSpeakingRef.current = false;
+      }
+    };
+
     recognition.onend = () => {
       setListening(false);
+      isStartingRecognitionRef.current = false;
     };
 
     recognition.onerror = (event: SpeechRecognitionEventLike) => {
       console.error("Speech recognition error", event.error);
       setListening(false);
-      // Only restart on specific errors, not network/aborted
+      isStartingRecognitionRef.current = false;
+
+      // Only restart on specific errors, not network/aborted/no-speech
       const error = event.error;
       if (error !== 'network' && error !== 'aborted' && error !== 'no-speech') {
         setTimeout(() => {
@@ -322,7 +339,14 @@ export default function Home() {
     };
 
     recognitionRef.current = recognition;
-    recognition.start();
+
+    try {
+      recognition.start();
+    } catch (error) {
+      console.error("Failed to start recognition:", error);
+      setListening(false);
+      isStartingRecognitionRef.current = false;
+    }
   }, [recognizedDevice, deviceLabel, listening, recordAction, enqueueSpeech]);
 
   useEffect(() => {
@@ -542,7 +566,7 @@ export default function Home() {
           setStatus("Still reviewing the device...");
           return;
         }
-        setStatus(`${voiceText}. Tap the mic when you're ready with a question.`);
+        setStatus(`${voiceText} detected.`);
         recordAction("Description received");
         setRecognizedDevice(true);
         setDeviceLabel(structuredResult.shortDescription);
