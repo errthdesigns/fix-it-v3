@@ -183,7 +183,7 @@ export default function Home() {
     }
 
     const recognition = new SpeechRecognitionCtor();
-    recognition.continuous = true;
+    recognition.continuous = false;  // Only listen for ONE question
     recognition.interimResults = true;
     recognition.lang = "en-GB";
 
@@ -200,6 +200,11 @@ export default function Home() {
       }
       lastTranscriptRef.current = transcript;
       console.log("spoken transcript:", transcript);
+
+      // STOP LISTENING IMMEDIATELY to prevent picking up AI's voice
+      recognitionRef.current?.stop();
+      setListening(false);
+
       try {
         recordAction(`Asked about ${deviceLabel}`);
         const qaResponse = await fetch("/api/qa", {
@@ -296,9 +301,8 @@ export default function Home() {
     };
 
     recognition.onend = () => {
-      if (listening) {
-        recognition.start();
-      }
+      // Don't auto-restart - user must click mic again to ask another question
+      setListening(false);
     };
 
     recognition.onerror = (event: SpeechRecognitionEventLike) => {
