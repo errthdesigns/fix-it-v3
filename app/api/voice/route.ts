@@ -43,14 +43,14 @@ export async function POST(req: NextRequest) {
         },
         body: JSON.stringify({
           text,
-          model_id: "eleven_turbo_v2",
+          model_id: "eleven_turbo_v2_5",
           voice_settings: {
-            stability: 0.4,
-            similarity_boost: 0.8,
-            style: 0.6,
+            stability: 0.3,
+            similarity_boost: 0.85,
+            style: 0.8,
             use_speaker_boost: true,
           },
-          optimize_streaming_latency: 3,
+          optimize_streaming_latency: 2,
         }),
       }
     );
