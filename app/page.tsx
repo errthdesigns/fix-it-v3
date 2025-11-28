@@ -78,6 +78,7 @@ export default function Home() {
   const [needsAudioUnlock, setNeedsAudioUnlock] = useState(true);
   const isSpeakingRef = useRef(false);
   const isStartingRecognitionRef = useRef(false);
+  const [lastQARequest, setLastQARequest] = useState<{device: string | null, question: string} | null>(null);
 
   const recordAction = useCallback(
     (message: string) => {
@@ -213,6 +214,12 @@ export default function Home() {
         console.log("💬 Sending QA request:");
         console.log("  Device:", deviceLabel || "null");
         console.log("  Question:", transcript);
+
+        // Store for debug display
+        setLastQARequest({
+          device: deviceLabel,
+          question: transcript
+        });
 
         const qaResponse = await fetch("/api/qa", {
           method: "POST",
@@ -670,11 +677,18 @@ export default function Home() {
             </div>
           )}
           {/* Debug Info - Top Right */}
-          <div className="pointer-events-none absolute top-20 right-4 bg-black/80 backdrop-blur-sm border border-yellow-500/60 px-3 py-2 rounded-lg text-xs font-mono">
+          <div className="pointer-events-none absolute top-20 right-4 bg-black/80 backdrop-blur-sm border border-yellow-500/60 px-3 py-2 rounded-lg text-xs font-mono max-w-xs">
             <p className="text-yellow-400 font-bold mb-1">DEBUG</p>
             <p className="text-white">Device: {deviceLabel || "null"}</p>
             <p className="text-white">Recognized: {recognizedDevice ? "yes" : "no"}</p>
             <p className="text-white">Analyzing: {isAnalyzing ? "yes" : "no"}</p>
+            {lastQARequest && (
+              <>
+                <p className="text-yellow-400 font-bold mt-2 mb-1">LAST QA REQUEST:</p>
+                <p className="text-white break-words">Sent Device: {lastQARequest.device || "NULL!"}</p>
+                <p className="text-white break-words">Q: {lastQARequest.question.slice(0, 30)}...</p>
+              </>
+            )}
           </div>
 
           {/* Visible Status Overlay */}
