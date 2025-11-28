@@ -77,7 +77,7 @@ export default function Home() {
   const [audioUnlocked, setAudioUnlocked] = useState(false);
   const [needsAudioUnlock, setNeedsAudioUnlock] = useState(true);
   const scanErrorCountRef = useRef(0);
-  const scanIntervalRef = useRef(3000); // Start with 3 seconds
+  const scanIntervalRef = useRef(2000); // Start with 2 seconds for faster detection
   const [userTranscript, setUserTranscript] = useState<string>("");
   const hasProcessedQuestionRef = useRef(false);
 
@@ -506,7 +506,7 @@ export default function Home() {
       return null;
     }
 
-    const targetWidth = 640;
+    const targetWidth = 1024; // Increased from 640 for better quality
     const aspect =
       video.videoWidth && video.videoHeight
         ? video.videoHeight / video.videoWidth
@@ -518,7 +518,7 @@ export default function Home() {
     if (!context) return null;
 
     context.drawImage(video, 0, 0, targetWidth, targetHeight);
-    const snapshot = canvas.toDataURL("image/webp", 0.65);
+    const snapshot = canvas.toDataURL("image/jpeg", 0.85); // Changed to JPEG with higher quality
     recordAction("Frame captured");
     return snapshot;
   }, [recordAction]);
@@ -527,7 +527,7 @@ export default function Home() {
     async (overrideSnapshot?: string) => {
       if (!cameraReady || isAnalyzing) return;
       const now = performance.now();
-      if (now - lastScanRef.current < 1200) return;
+      if (now - lastScanRef.current < 800) return; // Reduced from 1200ms to 800ms
       lastScanRef.current = now;
       const snapshot = overrideSnapshot ?? captureFrame();
       if (!snapshot) {
@@ -539,14 +539,15 @@ export default function Home() {
 
       try {
         setIsAnalyzing(true);
-        setStatus("Sending the scene to OpenAI...");
+        setStatus("Scanning for device...");
         recordAction("Recognizing product");
 
         let structuredResult: RecognitionResult | null = null;
+        // Reduced cache time from 5000ms to 2000ms for faster re-detection
         if (
           lastRecognitionRef.current &&
           lastRecognitionRef.current.signature === snapshotSignature &&
-          now - lastRecognitionRef.current.timestamp < 5000
+          now - lastRecognitionRef.current.timestamp < 2000
         ) {
           structuredResult = lastRecognitionRef.current.result;
           recordAction("Reuse cached recognition");
@@ -612,7 +613,7 @@ export default function Home() {
 
         // Reset scan interval and error count on success
         scanErrorCountRef.current = 0;
-        scanIntervalRef.current = 3000;
+        scanIntervalRef.current = 2000; // Back to 2 seconds on success
       } catch (error) {
         console.error(error);
         const message =
@@ -623,7 +624,7 @@ export default function Home() {
         // Implement exponential backoff on errors
         scanErrorCountRef.current += 1;
         const backoffMultiplier = Math.min(Math.pow(2, scanErrorCountRef.current - 1), 8);
-        scanIntervalRef.current = 3000 * backoffMultiplier; // Max 24 seconds
+        scanIntervalRef.current = 2000 * backoffMultiplier; // Max 16 seconds (2s, 4s, 8s, 16s)
 
         // Check for rate limit errors
         if (message.includes("Rate limit") || message.includes("429")) {
