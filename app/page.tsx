@@ -482,6 +482,8 @@ export default function Home() {
     if (deviceLabel && userTranscript && !hasProcessedQuestionRef.current) {
       console.log('[DEBUG] Triggering Q&A with:', { deviceLabel, userTranscript });
       processQuestion(deviceLabel, userTranscript);
+    } else if (deviceLabel && userTranscript && hasProcessedQuestionRef.current) {
+      console.log('[DEBUG] Q&A already processed. Refresh page to ask another question.');
     }
   }, [deviceLabel, userTranscript, processQuestion]);
 
@@ -604,7 +606,13 @@ export default function Home() {
           setStatus("Still reviewing the device...");
           return;
         }
-        setStatus(`${voiceText}. Tap the mic when you're ready with a question.`);
+
+        // Check if user has already spoken
+        const alreadyHasQuestion = !!userTranscript;
+        setStatus(alreadyHasQuestion
+          ? `Device detected: ${voiceText}. Processing your question...`
+          : `Device detected: ${voiceText}. Listening for your question...`
+        );
         recordAction("Description received");
         setRecognizedDevice(true);
         setDeviceLabel(structuredResult.shortDescription);

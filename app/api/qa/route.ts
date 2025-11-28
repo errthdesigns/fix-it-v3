@@ -45,11 +45,13 @@ export async function POST(request: Request) {
 
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
+      console.error('[QA API] OPENAI_API_KEY is missing!');
       return NextResponse.json(
-        { error: "OPENAI_API_KEY is not configured." },
+        { error: "OPENAI_API_KEY is not configured. Please add it to your environment variables." },
         { status: 500 }
       );
     }
+    console.log('[QA API] API key found, length:', apiKey.length);
 
     const userPrompt = `
 Detected device: ${deviceDescription ?? "Unknown device"}
