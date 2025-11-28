@@ -556,6 +556,15 @@ export default function Home() {
               object recognition v1
             </span>
           </div>
+          {/* DEBUG Panel */}
+          <div className="pointer-events-none absolute right-6 top-6 rounded-lg border-2 border-yellow-500 bg-black/90 px-4 py-3 text-sm font-mono text-white backdrop-blur">
+            <div className="mb-1 font-bold uppercase tracking-wider text-yellow-500">
+              DEBUG
+            </div>
+            <div>Device: {deviceLabel || "None"}</div>
+            <div>Recognized: {recognizedDevice ? "yes" : "no"}</div>
+            <div>Analyzing: {isAnalyzing ? "yes" : "no"}</div>
+          </div>
           <video
             ref={videoRef}
             className="h-full w-full object-cover pointer-events-none"
@@ -586,7 +595,7 @@ export default function Home() {
               </p>
               <ol className="mt-4 space-y-2 text-base leading-relaxed text-white/90 text-left list-decimal list-inside">
                 <li>Point your camera at the device.</li>
-                <li>Speak aloud saying what’s not working.</li>
+                <li>Speak aloud saying what's not working.</li>
                 <li>FIX IT will look through your camera and talk you through the fix.</li>
               </ol>
               <button
@@ -596,6 +605,37 @@ export default function Home() {
               >
                 START
               </button>
+            </div>
+          )}
+          {audioUnlocked && (
+            <div className="pointer-events-none absolute bottom-20 left-1/2 z-20 w-[85%] max-w-md -translate-x-1/2 rounded-2xl border border-white/40 bg-black/85 px-6 py-4 text-center text-white shadow-2xl backdrop-blur">
+              <p className="text-lg font-medium leading-relaxed">
+                {!recognizedDevice ? (
+                  "Show me your device first."
+                ) : (
+                  <>
+                    Device recognized! Ask me how to fix it by tapping the mic.
+                  </>
+                )}
+              </p>
+              {recognizedDevice && deviceLabel && (
+                <div className="mt-2 flex items-center justify-center gap-2">
+                  <svg
+                    className="h-5 w-5 text-green-400"
+                    fill="currentColor"
+                    viewBox="0 0 20 20"
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                  <span className="text-sm font-medium text-green-400">
+                    {deviceLabel}
+                  </span>
+                </div>
+              )}
             </div>
           )}
           <div className="pointer-events-none absolute bottom-2 right-6 text-xs uppercase tracking-[0.3em] text-white/70">
