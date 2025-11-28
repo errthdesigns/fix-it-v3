@@ -1,7 +1,47 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const audioCache = new Map<string, Buffer>();
-const MAX_CACHE_SIZE = 50;
+// LRU Cache implementation
+class LRUCache<K, V> {
+  private cache: Map<K, V>;
+  private maxSize: number;
+
+  constructor(maxSize: number) {
+    this.cache = new Map();
+    this.maxSize = maxSize;
+  }
+
+  get(key: K): V | undefined {
+    const value = this.cache.get(key);
+    if (value !== undefined) {
+      // Move to end (most recently used)
+      this.cache.delete(key);
+      this.cache.set(key, value);
+    }
+    return value;
+  }
+
+  set(key: K, value: V): void {
+    // Delete if already exists to update position
+    if (this.cache.has(key)) {
+      this.cache.delete(key);
+    }
+    // Add to end (most recently used)
+    this.cache.set(key, value);
+    // Evict oldest if over size
+    if (this.cache.size > this.maxSize) {
+      const firstKey = this.cache.keys().next().value;
+      if (firstKey !== undefined) {
+        this.cache.delete(firstKey);
+      }
+    }
+  }
+
+  has(key: K): boolean {
+    return this.cache.has(key);
+  }
+}
+
+const audioCache = new LRUCache<string, Buffer>(200); // Increased from 50 to 200
 
 const bufferToArrayBuffer = (buffer: Buffer): ArrayBuffer =>
   buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer;
@@ -14,8 +54,8 @@ export async function POST(req: NextRequest) {
     }
 
     const normalized = text.trim().toLowerCase();
-    if (audioCache.has(normalized)) {
-      const cached = audioCache.get(normalized)!;
+    const cached = audioCache.get(normalized);
+    if (cached) {
       return new NextResponse(bufferToArrayBuffer(cached), {
         headers: {
           "Content-Type": "audio/mpeg",
@@ -66,12 +106,7 @@ export async function POST(req: NextRequest) {
 
     const audioBuffer = Buffer.from(await response.arrayBuffer());
 
-    if (audioCache.size >= MAX_CACHE_SIZE) {
-      const iterator = audioCache.keys().next();
-      if (!iterator.done) {
-        audioCache.delete(iterator.value);
-      }
-    }
+    // LRU cache handles eviction automatically
     audioCache.set(normalized, audioBuffer);
 
     return new NextResponse(bufferToArrayBuffer(audioBuffer), {

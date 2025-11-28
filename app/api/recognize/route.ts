@@ -15,16 +15,73 @@ type CompletionContent =
   | Array<string | { text?: string }>
   | null;
 
-const visionCache = new Map<string, RecognitionPayload>();
-const MAX_CACHE_SIZE = 50;
+// LRU Cache implementation
+class LRUCache<K, V> {
+  private cache: Map<K, V>;
+  private maxSize: number;
+
+  constructor(maxSize: number) {
+    this.cache = new Map();
+    this.maxSize = maxSize;
+  }
+
+  get(key: K): V | undefined {
+    const value = this.cache.get(key);
+    if (value !== undefined) {
+      // Move to end (most recently used)
+      this.cache.delete(key);
+      this.cache.set(key, value);
+    }
+    return value;
+  }
+
+  set(key: K, value: V): void {
+    // Delete if already exists to update position
+    if (this.cache.has(key)) {
+      this.cache.delete(key);
+    }
+    // Add to end (most recently used)
+    this.cache.set(key, value);
+    // Evict oldest if over size
+    if (this.cache.size > this.maxSize) {
+      const firstKey = this.cache.keys().next().value;
+      if (firstKey !== undefined) {
+        this.cache.delete(firstKey);
+      }
+    }
+  }
+
+  has(key: K): boolean {
+    return this.cache.has(key);
+  }
+}
+
+const visionCache = new LRUCache<string, RecognitionPayload>(200); // Increased from 50 to 200
 
 const hashImageData = (imageData: string) => {
   let hash = 0;
-  const samples = 50;
-  const step = Math.max(1, Math.floor(imageData.length / samples));
-  for (let i = 0; i < samples && i < imageData.length; i += step) {
-    hash = ((hash << 5) - hash + imageData.charCodeAt(i)) | 0;
+  const samples = 200; // Increased from 50 to 200 for better uniqueness
+  const len = imageData.length;
+
+  // Include length in hash to differentiate images of different sizes
+  hash = ((hash << 5) - hash + len) | 0;
+
+  // Sample evenly across the entire data
+  const step = Math.max(1, Math.floor(len / samples));
+  for (let i = 0; i < len; i += step) {
+    const char = imageData.charCodeAt(i);
+    hash = ((hash << 5) - hash + char) | 0;
   }
+
+  // Also sample from fixed positions (beginning, middle, end)
+  // to catch differences in headers and trailers
+  const positions = [0, Math.floor(len * 0.25), Math.floor(len * 0.5), Math.floor(len * 0.75), len - 1];
+  for (const pos of positions) {
+    if (pos >= 0 && pos < len) {
+      hash = ((hash << 5) - hash + imageData.charCodeAt(pos)) | 0;
+    }
+  }
+
   return hash.toString(36);
 };
 
@@ -80,8 +137,9 @@ export async function POST(req: NextRequest) {
     }
 
     const cacheKey = hashImageData(image);
-    if (visionCache.has(cacheKey)) {
-      return NextResponse.json({ ...visionCache.get(cacheKey)!, cached: true });
+    const cachedResult = visionCache.get(cacheKey);
+    if (cachedResult) {
+      return NextResponse.json({ ...cachedResult, cached: true });
     }
 
     const apiKey = process.env.OPENAI_API_KEY;
@@ -158,12 +216,7 @@ Keep it brief and accurate. Focus on visible features.`,
       normalized = fallbackResult(cleaned);
     }
 
-    if (visionCache.size >= MAX_CACHE_SIZE) {
-      const iterator = visionCache.keys().next();
-      if (!iterator.done) {
-        visionCache.delete(iterator.value);
-      }
-    }
+    // LRU cache handles eviction automatically
     visionCache.set(cacheKey, normalized);
 
     return NextResponse.json(normalized);

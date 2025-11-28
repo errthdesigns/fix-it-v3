@@ -77,6 +77,8 @@ export default function Home() {
   const [micReady, setMicReady] = useState(false);
   const [audioUnlocked, setAudioUnlocked] = useState(false);
   const [needsAudioUnlock, setNeedsAudioUnlock] = useState(true);
+  const scanErrorCountRef = useRef(0);
+  const scanIntervalRef = useRef(3000); // Start with 3 seconds
 
   const recordAction = useCallback(
     (message: string) => {
@@ -90,13 +92,21 @@ export default function Home() {
       const trimmed = line.trim();
       if (!trimmed) return;
       try {
+        // Add timeout to fetch request (10 seconds)
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
+
         const voiceResponse = await fetch("/api/voice", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({ text: trimmed }),
+          signal: controller.signal,
         });
+
+        clearTimeout(timeoutId);
+
         if (!voiceResponse.ok) {
           const errorText = await voiceResponse.text();
           throw new Error(errorText || "Voice synthesis failed.");
@@ -115,22 +125,47 @@ export default function Home() {
           audioElement.src = audioUrl;
           await audioElement.play().catch((err) => {
             console.error("Voice playback failed", err);
+            throw err; // Re-throw to trigger catch block
           });
-          await new Promise<void>((resolve) => {
+
+          // Add timeout to audio playback (30 seconds max)
+          await new Promise<void>((resolve, reject) => {
             if (!audioElement) {
               resolve();
               return;
             }
-            const handleEnded = () => {
+
+            const playbackTimeout = setTimeout(() => {
               audioElement.removeEventListener("ended", handleEnded);
+              audioElement.removeEventListener("error", handleError);
+              audioElement.pause();
+              reject(new Error("Audio playback timeout"));
+            }, 30000);
+
+            const handleEnded = () => {
+              clearTimeout(playbackTimeout);
+              audioElement.removeEventListener("ended", handleEnded);
+              audioElement.removeEventListener("error", handleError);
               resolve();
             };
+
+            const handleError = () => {
+              clearTimeout(playbackTimeout);
+              audioElement.removeEventListener("ended", handleEnded);
+              audioElement.removeEventListener("error", handleError);
+              reject(new Error("Audio playback error"));
+            };
+
             audioElement.addEventListener("ended", handleEnded, { once: true });
+            audioElement.addEventListener("error", handleError, { once: true });
           });
         }
       } catch (error) {
-        console.error(error);
-        setStatus("Voice playback failed.");
+        console.error("Voice playback error:", error);
+        // Don't set status here, just log - this allows queue to continue
+        if (error instanceof Error && error.name === 'AbortError') {
+          console.warn("Voice request timed out");
+        }
       }
     },
     [setStatus]
@@ -202,6 +237,11 @@ export default function Home() {
       console.log("spoken transcript:", transcript);
       try {
         recordAction(`Asked about ${deviceLabel}`);
+
+        // Add timeout to Q&A request (30 seconds)
+        const qaController = new AbortController();
+        const qaTimeoutId = setTimeout(() => qaController.abort(), 30000);
+
         const qaResponse = await fetch("/api/qa", {
           method: "POST",
           headers: {
@@ -211,7 +251,10 @@ export default function Home() {
             deviceDescription: deviceLabel,
             transcript,
           }),
+          signal: qaController.signal,
         });
+
+        clearTimeout(qaTimeoutId);
 
         if (!qaResponse.ok || !qaResponse.body) {
           const qaError = await qaResponse
@@ -262,7 +305,10 @@ export default function Home() {
             try {
               const payload = JSON.parse(payloadRaw);
               if (payload.error) {
-                throw new Error(payload.error);
+                console.error("Stream error from server:", payload.error);
+                // Don't throw, just log - continue processing other chunks
+                setStatus(`Error: ${payload.error}`);
+                continue;
               }
               if (typeof payload.delta === "string") {
                 aggregated += payload.delta;
@@ -274,9 +320,10 @@ export default function Home() {
                 flushSentences(true);
               }
             } catch (err) {
-              throw err instanceof Error
-                ? err
-                : new Error("Malformed stream payload.");
+              // Log parse errors but don't stop the stream
+              console.error("Failed to parse chunk:", payloadRaw, err);
+              // Continue to next chunk instead of throwing
+              continue;
             }
           }
         }
@@ -288,8 +335,12 @@ export default function Home() {
         setLastSpoken(aggregated);
         setCooldownUntil(performance.now() + 2000);
       } catch (err) {
-        console.error(err);
-        setStatus("Something went wrong with the question.");
+        console.error("Q&A error:", err);
+        if (err instanceof Error && err.name === 'AbortError') {
+          setStatus("Request timed out. Please try again.");
+        } else {
+          setStatus("Something went wrong with the question.");
+        }
       } finally {
         // keep recognition running until user toggles mic off
       }
@@ -462,13 +513,20 @@ export default function Home() {
           structuredResult = lastRecognitionRef.current.result;
           recordAction("Reuse cached recognition");
         } else {
+          // Add timeout to recognize request (15 seconds)
+          const recognizeController = new AbortController();
+          const recognizeTimeoutId = setTimeout(() => recognizeController.abort(), 15000);
+
           const recognitionResponse = await fetch("/api/recognize", {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
             },
             body: JSON.stringify({ image: snapshot }),
+            signal: recognizeController.signal,
           });
+
+          clearTimeout(recognizeTimeoutId);
 
           const recognitionData = await recognitionResponse.json();
           if (!recognitionResponse.ok) {
@@ -513,13 +571,29 @@ export default function Home() {
         setDeviceLabel(structuredResult.shortDescription);
         setLastSpoken(voiceText);
         setCooldownUntil(performance.now() + 4000);
+
+        // Reset scan interval and error count on success
+        scanErrorCountRef.current = 0;
+        scanIntervalRef.current = 3000;
       } catch (error) {
         console.error(error);
         const message =
           error instanceof Error
             ? error.message
             : "Something interrupted the scan.";
-        setStatus(message);
+
+        // Implement exponential backoff on errors
+        scanErrorCountRef.current += 1;
+        const backoffMultiplier = Math.min(Math.pow(2, scanErrorCountRef.current - 1), 8);
+        scanIntervalRef.current = 3000 * backoffMultiplier; // Max 24 seconds
+
+        // Check for rate limit errors
+        if (message.includes("Rate limit") || message.includes("429")) {
+          setStatus("Rate limit reached. Slowing down scans...");
+          scanIntervalRef.current = 10000; // Back off to 10 seconds on rate limit
+        } else {
+          setStatus(message);
+        }
         recordAction(message);
       } finally {
         setIsAnalyzing(false);
@@ -529,15 +603,25 @@ export default function Home() {
   );
 
   useEffect(() => {
-    const autoInterval = setInterval(() => {
-      if (!cameraReady || isAnalyzing || !audioUnlocked) return;
-      handleScan();
-    }, 1800);
+    let timeoutId: NodeJS.Timeout;
+
+    const scheduleNextScan = () => {
+      timeoutId = setTimeout(() => {
+        if (!cameraReady || isAnalyzing || !audioUnlocked) {
+          scheduleNextScan(); // Retry with same interval
+          return;
+        }
+        handleScan();
+        scheduleNextScan(); // Schedule next scan
+      }, scanIntervalRef.current);
+    };
+
+    scheduleNextScan();
 
     return () => {
-      clearInterval(autoInterval);
+      clearTimeout(timeoutId);
     };
-  }, [cameraReady, captureFrame, handleScan, isAnalyzing, audioUnlocked]);
+  }, [cameraReady, handleScan, isAnalyzing, audioUnlocked]);
 
   useEffect(() => {
     if (cameraReady) {
