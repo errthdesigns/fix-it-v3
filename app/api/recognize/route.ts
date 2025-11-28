@@ -114,27 +114,36 @@ export async function POST(req: NextRequest) {
             content: [
               {
                 type: "text",
-                text: `Look at this image and identify any electronic device, gadget, appliance, or technical product visible.
+                text: `IDENTIFY THE DEVICE IN THIS IMAGE.
 
-If you see a device (phone, tablet, laptop, remote, charger, cable, game console, camera, headphones, smart device, appliance, etc.), respond with valid JSON:
+Look for ANY technical device visible - phones, tablets, laptops, chargers, cables, remotes, game consoles, cameras, headphones, appliances, etc.
+
+CRITICAL: Be as SPECIFIC as possible:
+- If it's an iPhone, identify the model (iPhone 14 Pro, iPhone 12, etc.) based on camera layout, design, notch/island
+- If it's Android, identify brand and model if possible (Samsung Galaxy, Google Pixel, etc.)
+- For laptops, identify brand (MacBook Pro, Dell XPS, etc.)
+- For cables/chargers, identify the connector type (USB-C, Lightning, Micro-USB, MagSafe, etc.)
+- For any device, note visible buttons, ports, logos, colors, features
+
+If you see a device, respond with:
 {
-  "product_name": "specific device name or model if visible",
-  "category": "device type in 2-3 words",
-  "description": "brief description in 15-25 words",
-  "highlights": ["visible feature 1", "visible feature 2", "visible feature 3"],
+  "product_name": "SPECIFIC model/brand (e.g., 'iPhone 14 Pro', 'MacBook Air M2', 'USB-C cable', 'PlayStation 5 controller')",
+  "category": "device type",
+  "description": "specific details about THIS exact device visible in the image",
+  "highlights": ["camera layout", "specific port type", "visible brand/model indicators"],
   "is_device": true
 }
 
-If NO technical device is visible (just a person, wall, random object, etc.), respond:
+If NO device visible:
 {
   "product_name": "No device detected",
   "category": "Not a device",
-  "description": "Please point your camera at an electronic device or appliance",
+  "description": "Point camera at a technical device",
   "highlights": [],
   "is_device": false
 }
 
-Respond ONLY with the JSON, no markdown or explanation.`,
+Respond with JSON only, no markdown.`,
               },
               {
                 type: "image_url",
