@@ -66,7 +66,6 @@ export default function Home() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [recentActions, setRecentActions] = useState<string[]>([]);
   const [recognizedDevice, setRecognizedDevice] = useState(false);
-  const [micClicks, setMicClicks] = useState(0);
   const [deviceLabel, setDeviceLabel] = useState<string | null>(null);
   const [listening, setListening] = useState(false);
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
@@ -74,9 +73,9 @@ export default function Home() {
   const [cooldownUntil, setCooldownUntil] = useState(0);
   const [lastSpoken, setLastSpoken] = useState<string>("");
   const hasGreetedRef = useRef(false);
-  const [micReady, setMicReady] = useState(false);
   const [audioUnlocked, setAudioUnlocked] = useState(false);
   const [needsAudioUnlock, setNeedsAudioUnlock] = useState(true);
+  const isSpeakingRef = useRef(false);
 
   const recordAction = useCallback(
     (message: string) => {
@@ -90,6 +89,7 @@ export default function Home() {
       const trimmed = line.trim();
       if (!trimmed) return;
       try {
+        isSpeakingRef.current = true;
         const voiceResponse = await fetch("/api/voice", {
           method: "POST",
           headers: {
@@ -123,6 +123,7 @@ export default function Home() {
             }
             const handleEnded = () => {
               audioElement.removeEventListener("ended", handleEnded);
+              isSpeakingRef.current = false;
               resolve();
             };
             audioElement.addEventListener("ended", handleEnded, { once: true });
@@ -131,6 +132,7 @@ export default function Home() {
       } catch (error) {
         console.error(error);
         setStatus("Voice playback failed.");
+        isSpeakingRef.current = false;
       }
     },
     [setStatus]
@@ -147,24 +149,14 @@ export default function Home() {
     [playVoiceLine]
   );
 
-  const handleMicClick = useCallback(() => {
+  const startListening = useCallback(() => {
     if (!recognizedDevice || !deviceLabel) {
-      setStatus("Mic will enable once a device is detected.");
       return;
     }
 
     if (listening) {
-      recognitionRef.current?.stop();
-      setListening(false);
-      setStatus("Voice input paused.");
-      lastTranscriptRef.current = "";
-      return;
+      return; // Already listening
     }
-
-    setMicClicks((prev) => prev + 1);
-    setStatus("Listening for your question...");
-    setListening(true);
-    lastTranscriptRef.current = "";
 
     const SpeechRecognitionCtor =
       (window as typeof window & {
@@ -178,20 +170,30 @@ export default function Home() {
 
     if (!SpeechRecognitionCtor) {
       setStatus("Speech recognition is unavailable.");
-      setListening(false);
       return;
     }
 
+    setListening(true);
+    setStatus("Listening...");
+    lastTranscriptRef.current = "";
+
     const recognition = new SpeechRecognitionCtor();
-    recognition.continuous = false;  // Only listen for ONE question
+    recognition.continuous = true;
     recognition.interimResults = true;
     recognition.lang = "en-GB";
 
     recognition.onresult = async (event: SpeechRecognitionEventLike) => {
       const result = event.results[event.results.length - 1];
       const interim = result[0]?.transcript?.trim() ?? "";
+
+      // If user starts speaking while AI is talking, stop the AI
+      if (isSpeakingRef.current && audioRef.current) {
+        audioRef.current.pause();
+        isSpeakingRef.current = false;
+      }
+
       if (!result.isFinal) {
-        setStatus(interim ? `You said: "${interim}"…` : "Listening for your question...");
+        setStatus(interim ? `"${interim}"` : "Listening...");
         return;
       }
       const transcript = interim;
@@ -199,14 +201,14 @@ export default function Home() {
         return;
       }
       lastTranscriptRef.current = transcript;
-      console.log("spoken transcript:", transcript);
+      console.log("User question:", transcript);
 
-      // STOP LISTENING IMMEDIATELY to prevent picking up AI's voice
+      // STOP LISTENING while processing
       recognitionRef.current?.stop();
       setListening(false);
 
       try {
-        recordAction(`Asked about ${deviceLabel}`);
+        recordAction(`Q: ${transcript.slice(0, 30)}`);
         const qaResponse = await fetch("/api/qa", {
           method: "POST",
           headers: {
@@ -250,7 +252,7 @@ export default function Home() {
           }
         };
 
-        setStatus("Assistant is replying...");
+        setStatus("FIX IT is answering...");
 
         while (true) {
           const { value, done } = await reader.read();
@@ -291,24 +293,33 @@ export default function Home() {
         }
 
         setLastSpoken(aggregated);
-        setCooldownUntil(performance.now() + 2000);
+
+        // Wait for speech to finish, then restart listening
+        await speechQueueRef.current;
+        setTimeout(() => {
+          startListening();
+        }, 500);
+
       } catch (err) {
         console.error(err);
-        setStatus("Something went wrong with the question.");
-      } finally {
-        // keep recognition running until user toggles mic off
+        setStatus("Something went wrong. Try again.");
+        setTimeout(() => {
+          startListening();
+        }, 2000);
       }
     };
 
     recognition.onend = () => {
-      // Don't auto-restart - user must click mic again to ask another question
       setListening(false);
     };
 
     recognition.onerror = (event: SpeechRecognitionEventLike) => {
       console.error("Speech recognition error", event.error);
-      setStatus("Speech recognition error.");
       setListening(false);
+      // Auto-restart after error
+      setTimeout(() => {
+        startListening();
+      }, 1000);
     };
 
     recognitionRef.current = recognition;
@@ -367,7 +378,8 @@ export default function Home() {
     hasGreetedRef.current = true;
     (async () => {
       try {
-        const greeting = "Hey, I'm FIX IT. What can I help you with?";
+        isSpeakingRef.current = true;
+        const greeting = "Hey, I'm FIX IT. Point your camera at a device to get started.";
         setStatus(greeting);
         const response = await fetch("/api/voice", {
           method: "POST",
@@ -391,11 +403,22 @@ export default function Home() {
         if (audioRef.current) {
           audioRef.current.src = url;
           await audioRef.current.play();
+          await new Promise<void>((resolve) => {
+            if (!audioRef.current) {
+              resolve();
+              return;
+            }
+            const handleEnded = () => {
+              audioRef.current?.removeEventListener("ended", handleEnded);
+              isSpeakingRef.current = false;
+              resolve();
+            };
+            audioRef.current.addEventListener("ended", handleEnded, { once: true });
+          });
         }
-        setMicReady(true);
       } catch (error) {
         console.error(error);
-        setMicReady(true);
+        isSpeakingRef.current = false;
       }
     })();
   }, [audioUnlocked]);
@@ -412,6 +435,15 @@ export default function Home() {
       }
     };
   }, []);
+
+  // Auto-start listening when device is detected
+  useEffect(() => {
+    if (recognizedDevice && deviceLabel && !listening && audioUnlocked) {
+      setTimeout(() => {
+        startListening();
+      }, 1000);
+    }
+  }, [recognizedDevice, deviceLabel, listening, audioUnlocked, startListening]);
 
   const captureFrame = useCallback(() => {
     const video = videoRef.current;
@@ -567,22 +599,15 @@ export default function Home() {
             muted
             playsInline
           />
-          <button
-            type="button"
-            aria-label="Start voice question"
-            onClick={handleMicClick}
-            className="absolute bottom-6 right-6 z-30 flex h-12 w-12 items-center justify-center rounded-full border border-white/60 bg-white/90 text-slate-900 shadow-xl transition hover:bg-white pointer-events-auto disabled:opacity-60 disabled:cursor-not-allowed"
-            disabled={!micReady}
-          >
-            <svg
-              className="h-6 w-6"
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 24 24"
-              fill="currentColor"
-            >
-              <path d="M12 14c1.657 0 3-1.343 3-3V6a3 3 0 0 0-6 0v5c0 1.657 1.343 3 3 3zm5-3c0 2.761-2.239 5-5 5s-5-2.239-5-5H5c0 3.533 2.613 6.432 6 6.92V22h2v-4.08c3.387-.488 6-3.387 6-6.92h-2z" />
-            </svg>
-          </button>
+          {/* Listening Indicator */}
+          {listening && (
+            <div className="absolute bottom-6 right-6 z-30 flex h-16 w-16 items-center justify-center pointer-events-none">
+              <div className="absolute inset-0 rounded-full bg-red-500/30 animate-ping" />
+              <div className="relative flex h-12 w-12 items-center justify-center rounded-full border-2 border-red-500 bg-red-500/90 shadow-xl">
+                <div className="h-3 w-3 rounded-full bg-white animate-pulse" />
+              </div>
+            </div>
+          )}
           {needsAudioUnlock && !audioUnlocked && (
             <div className="pointer-events-auto absolute bottom-20 left-1/2 z-30 w-[90%] max-w-sm -translate-x-1/2 rounded-2xl border border-white/40 bg-black/85 px-6 py-6 text-center text-white shadow-2xl backdrop-blur">
               <p className="text-sm font-semibold uppercase tracking-[0.45em] text-white/75">
@@ -602,16 +627,23 @@ export default function Home() {
               </button>
             </div>
           )}
-          <div className="pointer-events-none absolute bottom-2 right-6 text-xs uppercase tracking-[0.3em] text-white/70">
-            clicks: {micClicks}
-          </div>
           {/* Visible Status Overlay */}
-          <div className="pointer-events-none absolute bottom-20 left-1/2 -translate-x-1/2 max-w-md px-6 py-3 rounded-lg bg-black/80 backdrop-blur-sm border border-white/20 text-center">
-            <p className="text-sm text-white/90 leading-relaxed">
+          <div className={`pointer-events-none absolute bottom-8 left-1/2 -translate-x-1/2 max-w-lg px-8 py-4 rounded-2xl backdrop-blur-md border-2 text-center transition-all duration-300 ${
+            listening
+              ? 'bg-red-500/20 border-red-500/60'
+              : 'bg-black/90 border-white/30'
+          }`}>
+            {listening && (
+              <p className="text-xs font-bold uppercase tracking-wider text-red-400 mb-2 flex items-center justify-center gap-2">
+                <span className="inline-block h-2 w-2 rounded-full bg-red-500 animate-pulse" />
+                LISTENING
+              </p>
+            )}
+            <p className="text-base text-white font-medium leading-relaxed">
               {status}
             </p>
-            {recognizedDevice && deviceLabel && (
-              <p className="text-xs text-green-400/80 mt-1">
+            {recognizedDevice && deviceLabel && !listening && (
+              <p className="text-sm text-green-400 mt-2 font-semibold">
                 ✓ {deviceLabel}
               </p>
             )}
