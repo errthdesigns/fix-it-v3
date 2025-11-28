@@ -68,6 +68,7 @@ export default function Home() {
   const [recentActions, setRecentActions] = useState<string[]>([]);
   const [recognizedDevice, setRecognizedDevice] = useState(false);
   const [deviceLabel, setDeviceLabel] = useState<string | null>(null);
+  const deviceLabelRef = useRef<string | null>(null);
   const [listening, setListening] = useState(false);
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
   const lastTranscriptRef = useRef("");
@@ -212,12 +213,12 @@ export default function Home() {
       try {
         recordAction(`Q: ${transcript.slice(0, 30)}`);
         console.log("💬 Sending QA request:");
-        console.log("  Device:", deviceLabel || "null");
+        console.log("  Device:", deviceLabelRef.current || "null");
         console.log("  Question:", transcript);
 
         // Store for debug display
         setLastQARequest({
-          device: deviceLabel,
+          device: deviceLabelRef.current,
           question: transcript
         });
 
@@ -227,7 +228,7 @@ export default function Home() {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            deviceDescription: deviceLabel || null,
+            deviceDescription: deviceLabelRef.current || null,
             transcript,
           }),
         });
@@ -590,6 +591,7 @@ export default function Home() {
         recordAction("Description received");
         setRecognizedDevice(true);
         setDeviceLabel(structuredResult.shortDescription);
+        deviceLabelRef.current = structuredResult.shortDescription;
         setLastSpoken(voiceText);
         setCooldownUntil(performance.now() + 4000);
       } catch (error) {
