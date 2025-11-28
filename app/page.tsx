@@ -210,6 +210,10 @@ export default function Home() {
 
       try {
         recordAction(`Q: ${transcript.slice(0, 30)}`);
+        console.log("💬 Sending QA request:");
+        console.log("  Device:", deviceLabel || "null");
+        console.log("  Question:", transcript);
+
         const qaResponse = await fetch("/api/qa", {
           method: "POST",
           headers: {
@@ -566,6 +570,9 @@ export default function Home() {
           return;
         }
 
+        console.log("🔍 DEVICE DETECTED:", structuredResult.shortDescription);
+        console.log("📱 Device data:", structuredResult);
+
         // Only update status if not currently listening or speaking
         if (!listening && !isSpeakingRef.current) {
           setStatus(`${voiceText} detected.`);
@@ -659,6 +666,14 @@ export default function Home() {
               </button>
             </div>
           )}
+          {/* Debug Info - Top Right */}
+          <div className="pointer-events-none absolute top-20 right-4 bg-black/80 backdrop-blur-sm border border-yellow-500/60 px-3 py-2 rounded-lg text-xs font-mono">
+            <p className="text-yellow-400 font-bold mb-1">DEBUG</p>
+            <p className="text-white">Device: {deviceLabel || "null"}</p>
+            <p className="text-white">Recognized: {recognizedDevice ? "yes" : "no"}</p>
+            <p className="text-white">Analyzing: {isAnalyzing ? "yes" : "no"}</p>
+          </div>
+
           {/* Visible Status Overlay */}
           <div className={`pointer-events-none absolute bottom-8 left-1/2 -translate-x-1/2 max-w-lg px-8 py-4 rounded-2xl backdrop-blur-md border-2 text-center transition-all duration-300 ${
             listening
