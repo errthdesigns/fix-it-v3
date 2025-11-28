@@ -60,7 +60,7 @@ export default function Home() {
     result: RecognitionResult;
   } | null>(null);
   const [status, setStatus] = useState(
-    "Auto detection standing by—point at a device."
+    "Click START to begin."
   );
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [cameraReady, setCameraReady] = useState(false);
@@ -367,7 +367,7 @@ export default function Home() {
           setCameraReady(true);
         }
         setCameraError(null);
-        setStatus("Auto detection ready—hold steady near the product.");
+        setStatus("Camera ready.");
         recordAction("Camera online");
       } catch (error) {
         console.error(error);
@@ -589,21 +589,15 @@ export default function Home() {
   );
 
   useEffect(() => {
-    const autoInterval = setInterval(() => {
-      if (!cameraReady || isAnalyzing || !audioUnlocked) return;
-      handleScan();
-    }, 1800);
-
-    return () => {
-      clearInterval(autoInterval);
-    };
-  }, [cameraReady, captureFrame, handleScan, isAnalyzing, audioUnlocked]);
+    // Disable aggressive auto-scanning - only scan once on camera ready
+    // Device detection is optional, don't block conversation
+    return () => {};
+  }, []);
 
   useEffect(() => {
-    if (cameraReady) {
-      handleScan();
-    }
-  }, [cameraReady, handleScan]);
+    // Don't auto-scan on camera ready - let user talk first
+    // Device detection happens in background, doesn't block conversation
+  }, []);
 
   return (
     <main className="relative h-screen w-full bg-slate-950">
