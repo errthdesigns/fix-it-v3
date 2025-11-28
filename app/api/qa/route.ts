@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-const OPENAI_ENDPOINT = "https://api.openai.com/v1/responses";
+const OPENAI_ENDPOINT = "https://api.openai.com/v1/chat/completions";
 const MODEL = "gpt-4o-mini";
 
 const SYSTEM_PROMPT = `
@@ -8,20 +8,20 @@ You are FIX IT, a friendly voice assistant that helps people use and troubleshoo
 
 You will receive:
 
-- A short “Detected device: …” description of what the camera identified.
-- A transcription of what the user says (“User: …”).
+- A short "Detected device: …" description of what the camera identified.
+- A transcription of what the user says ("User: …").
 
 Your job:
 
 1. Use the detected device to understand the context.
-2. Understand the user’s question or request.
-3. Give clear, short spoken instructions (1 short sentence max), for how to use or fix that device.
+2. Understand the user's question or request.
+3. Give clear, short spoken instructions (1-2 sentences max), for how to use or fix that device.
 
 Rules:
 - Scope to technical products (phones, remotes, consoles, appliances, etc.). If the user asks about something else, steer them back politely by referencing the device.
-- If no device is provided, ask “What device are you using there?” before giving instructions.
-- Avoid long paragraphs, no jargon, and keep it ready for ElevenLabs narration.
-- If you’re unsure, be honest but helpful (“It looks like a generic Android phone; try holding the power button until it turns on.”).
+- If no device is provided, ask "What device are you using there?" before giving instructions.
+- Avoid long paragraphs, no jargon, and keep it ready for voice narration.
+- If you're unsure, be honest but helpful ("It looks like a generic Android phone; try holding the power button until it turns on.").
 - Never mention being an AI, the camera, or the prompts. Keep answers natural and friendly.
 `;
 
@@ -67,12 +67,12 @@ Respond with a short spoken-friendly instruction set. Stream back text chunks as
       body: JSON.stringify({
         model: MODEL,
         temperature: 0.2,
-        max_output_tokens: 400,
+        max_tokens: 400,
         top_p: 0.95,
         stream: true,
-        input: [
-          { role: "system", content: [{ type: "input_text", text: SYSTEM_PROMPT }] },
-          { role: "user", content: [{ type: "input_text", text: userPrompt }] },
+        messages: [
+          { role: "system", content: SYSTEM_PROMPT },
+          { role: "user", content: userPrompt },
         ],
       }),
     });
@@ -120,18 +120,17 @@ Respond with a short spoken-friendly instruction set. Stream back text chunks as
             }
             try {
               const parsed = JSON.parse(data);
-              if (
-                parsed.type === "response.output_text.delta" &&
-                typeof parsed.delta === "string"
-              ) {
-                fullText += parsed.delta;
-                await sendSseEvent(writer, { delta: parsed.delta });
-              } else if (parsed.type === "response.completed") {
+              // Handle OpenAI chat completion streaming format
+              if (parsed.choices && parsed.choices[0]?.delta?.content) {
+                const content = parsed.choices[0].delta.content;
+                fullText += content;
+                await sendSseEvent(writer, { delta: content });
+              } else if (parsed.choices && parsed.choices[0]?.finish_reason) {
                 await sendSseEvent(writer, { done: true, text: fullText });
                 doneEmitted = true;
-              } else if (parsed.type === "response.error") {
+              } else if (parsed.error) {
                 await sendSseEvent(writer, {
-                  error: parsed.error?.message ?? "OpenAI stream error.",
+                  error: parsed.error.message ?? "OpenAI stream error.",
                 });
                 doneEmitted = true;
               }
