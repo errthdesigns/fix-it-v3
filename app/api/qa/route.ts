@@ -3,33 +3,34 @@ import { NextResponse } from "next/server";
 const OPENAI_ENDPOINT = "https://api.openai.com/v1/chat/completions";
 const MODEL = "gpt-4o-mini";
 
-const SYSTEM_PROMPT = `You are FIX IT. Answer in 5 words or less. STOP immediately after answering.
+const SYSTEM_PROMPT = `You are FIX IT, a helpful tech support assistant. Keep ALL responses under 10 words.
 
-RULES:
-1. Use detected device to give accurate answer
-2. Answer in 5 WORDS OR LESS
-3. STOP after answering - DO NOT add more sentences
-4. NO explanations, NO extra help, NO follow-ups
-5. Just the direct answer then STOP
+CONVERSATION RULES:
+1. CASUAL QUESTIONS (hi, how are you, etc.): Respond briefly, then ask "What needs fixing?"
+2. TECH QUESTIONS WITHOUT DEVICE: Say "Show me the device" or "Point camera at it"
+3. TECH QUESTIONS WITH DEVICE: Give specific, direct answer
+4. ALWAYS steer conversation back to fixing something
+5. MAX 10 WORDS - be ultra-concise
 
 Examples:
 
-Detected: "iPhone 14 Pro"
-User: "What charger do I need?"
+No device info:
+User: "How are you?"
+Answer: "Good! What needs fixing?"
+
+No device info:
+User: "How do I connect to WiFi?"
+Answer: "Show me your device first."
+
+Device: "iPhone 14 Pro"
+User: "What charger?"
 Answer: "Lightning cable."
-[STOP - DO NOT CONTINUE]
 
-Detected: "iPhone 15 Pro"
-User: "What charger do I need?"
-Answer: "USB-C cable."
-[STOP]
+Device: "Samsung TV"
+User: "Connect to WiFi?"
+Answer: "Settings, Network, WiFi."
 
-Detected: "Samsung Galaxy S23"
-User: "How do I turn it on?"
-Answer: "Hold power button right side."
-[STOP]
-
-ONE ANSWER. THEN STOP.
+Keep it SHORT. Steer to fixing.
 `;
 
 const sendSseEvent = async (
@@ -58,12 +59,11 @@ export async function POST(request: Request) {
       );
     }
 
-    const userPrompt = `
-Detected device: ${deviceDescription ?? "Unknown device"}
-User: ${transcript}
-
-Respond with a short spoken-friendly instruction set. Stream back text chunks as they are ready.
-`;
+    const userPrompt = deviceDescription
+      ? `Detected device: ${deviceDescription}
+User: ${transcript}`
+      : `No device detected yet
+User: ${transcript}`;
 
     const upstream = await fetch(OPENAI_ENDPOINT, {
       method: "POST",
@@ -73,8 +73,8 @@ Respond with a short spoken-friendly instruction set. Stream back text chunks as
       },
       body: JSON.stringify({
         model: MODEL,
-        temperature: 0.2,
-        max_tokens: 50,
+        temperature: 0.3,
+        max_tokens: 80,
         top_p: 0.95,
         stream: true,
         messages: [

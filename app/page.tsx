@@ -150,10 +150,6 @@ export default function Home() {
   );
 
   const startListening = useCallback(() => {
-    if (!recognizedDevice || !deviceLabel) {
-      return;
-    }
-
     if (listening) {
       return; // Already listening
     }
@@ -215,7 +211,7 @@ export default function Home() {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            deviceDescription: deviceLabel,
+            deviceDescription: deviceLabel || null,
             transcript,
           }),
         });
@@ -316,10 +312,13 @@ export default function Home() {
     recognition.onerror = (event: SpeechRecognitionEventLike) => {
       console.error("Speech recognition error", event.error);
       setListening(false);
-      // Auto-restart after error
-      setTimeout(() => {
-        startListening();
-      }, 1000);
+      // Only restart on specific errors, not network/aborted
+      const error = event.error;
+      if (error !== 'network' && error !== 'aborted' && error !== 'no-speech') {
+        setTimeout(() => {
+          startListening();
+        }, 2000);
+      }
     };
 
     recognitionRef.current = recognition;
@@ -378,7 +377,7 @@ export default function Home() {
     (async () => {
       try {
         isSpeakingRef.current = true;
-        const greeting = "Hey, I'm FIX IT. Point your camera at a device to get started.";
+        const greeting = "Hey, I'm FIX IT. What needs fixing?";
         setStatus(greeting);
         const response = await fetch("/api/voice", {
           method: "POST",
@@ -415,12 +414,20 @@ export default function Home() {
             audioRef.current.addEventListener("ended", handleEnded, { once: true });
           });
         }
+        // Start listening after greeting
+        setTimeout(() => {
+          startListening();
+        }, 500);
       } catch (error) {
         console.error(error);
         isSpeakingRef.current = false;
+        // Still start listening even if greeting failed
+        setTimeout(() => {
+          startListening();
+        }, 500);
       }
     })();
-  }, [audioUnlocked]);
+  }, [audioUnlocked, startListening]);
 
   useEffect(() => {
     const currentAudio = audioRef.current;
@@ -435,14 +442,7 @@ export default function Home() {
     };
   }, []);
 
-  // Auto-start listening when device is detected
-  useEffect(() => {
-    if (recognizedDevice && deviceLabel && !listening && audioUnlocked) {
-      setTimeout(() => {
-        startListening();
-      }, 1000);
-    }
-  }, [recognizedDevice, deviceLabel, listening, audioUnlocked, startListening]);
+  // Removed auto-start on device detection - listening starts after greeting instead
 
   const captureFrame = useCallback(() => {
     const video = videoRef.current;
