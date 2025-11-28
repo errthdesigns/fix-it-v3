@@ -116,34 +116,41 @@ export async function POST(req: NextRequest) {
                 type: "text",
                 text: `IDENTIFY THE DEVICE IN THIS IMAGE.
 
-Look for ANY technical device visible - phones, tablets, laptops, chargers, cables, remotes, game consoles, cameras, headphones, appliances, etc.
+Look for ANY technical device - phones, remotes, laptops, tablets, chargers, cables, game consoles, cameras, headphones, appliances, tools, etc.
 
-CRITICAL: Be as SPECIFIC as possible:
-- If it's an iPhone, identify the model (iPhone 14 Pro, iPhone 12, etc.) based on camera layout, design, notch/island
-- If it's Android, identify brand and model if possible (Samsung Galaxy, Google Pixel, etc.)
-- For laptops, identify brand (MacBook Pro, Dell XPS, etc.)
-- For cables/chargers, identify the connector type (USB-C, Lightning, Micro-USB, MagSafe, etc.)
-- For any device, note visible buttons, ports, logos, colors, features
+Be specific when you can identify brand/model, but ALWAYS identify the general device type even if you can't tell the exact model.
 
-If you see a device, respond with:
+EXAMPLES:
+- Phone with visible Apple logo = "iPhone"
+- Phone with Android look = "Android Phone"
+- TV Remote with visible buttons = "TV Remote Control"
+- Laptop with Apple logo = "MacBook"
+- Generic laptop = "Laptop"
+- Cable with USB-C = "USB-C Cable"
+- Any remote = "Remote Control"
+- Any charger = "Phone Charger" or "Laptop Charger"
+
+PRIORITY: Get the device TYPE right (phone, remote, laptop, etc.) - specific model is bonus.
+
+If you see a device, respond:
 {
-  "product_name": "SPECIFIC model/brand (e.g., 'iPhone 14 Pro', 'MacBook Air M2', 'USB-C cable', 'PlayStation 5 controller')",
-  "category": "device type",
-  "description": "specific details about THIS exact device visible in the image",
-  "highlights": ["camera layout", "specific port type", "visible brand/model indicators"],
+  "product_name": "Device type + brand if visible (e.g., 'iPhone', 'Samsung Phone', 'TV Remote Control', 'Xbox Controller')",
+  "category": "general category",
+  "description": "what device and what it looks like",
+  "highlights": ["visible features", "buttons", "ports", "logos"],
   "is_device": true
 }
 
-If NO device visible:
+If NO device (just background, person, etc.):
 {
   "product_name": "No device detected",
   "category": "Not a device",
-  "description": "Point camera at a technical device",
+  "description": "Point camera at your device",
   "highlights": [],
   "is_device": false
 }
 
-Respond with JSON only, no markdown.`,
+JSON only, no markdown. Prioritize FINDING devices over being specific.`,
               },
               {
                 type: "image_url",
