@@ -186,12 +186,18 @@ export default function Home() {
   // Process Q&A when both device and transcript are ready
   const processQuestion = useCallback(
     async (deviceDesc: string, transcript: string) => {
-      if (hasProcessedQuestionRef.current) return;
+      console.log('[DEBUG] processQuestion called:', { deviceDesc, transcript });
+
+      if (hasProcessedQuestionRef.current) {
+        console.log('[DEBUG] Question already processed, skipping');
+        return;
+      }
       hasProcessedQuestionRef.current = true;
 
       try {
         recordAction(`Answering question about ${deviceDesc}`);
         setStatus("Processing your question...");
+        console.log('[DEBUG] Sending Q&A request to /api/qa');
 
         const qaController = new AbortController();
         const qaTimeoutId = setTimeout(() => qaController.abort(), 30000);
@@ -465,7 +471,16 @@ export default function Home() {
 
   // Process Q&A automatically when both device and transcript are ready
   useEffect(() => {
+    console.log('[DEBUG] Q&A Trigger Check:', {
+      hasDevice: !!deviceLabel,
+      hasTranscript: !!userTranscript,
+      alreadyProcessed: hasProcessedQuestionRef.current,
+      deviceLabel,
+      userTranscript: userTranscript?.substring(0, 50) + '...',
+    });
+
     if (deviceLabel && userTranscript && !hasProcessedQuestionRef.current) {
+      console.log('[DEBUG] Triggering Q&A with:', { deviceLabel, userTranscript });
       processQuestion(deviceLabel, userTranscript);
     }
   }, [deviceLabel, userTranscript, processQuestion]);
