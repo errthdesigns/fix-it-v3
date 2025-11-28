@@ -601,6 +601,17 @@ export default function Home() {
           <div className="pointer-events-none absolute bottom-2 right-6 text-xs uppercase tracking-[0.3em] text-white/70">
             clicks: {micClicks}
           </div>
+          {/* Visible Status Overlay */}
+          <div className="pointer-events-none absolute bottom-20 left-1/2 -translate-x-1/2 max-w-md px-6 py-3 rounded-lg bg-black/80 backdrop-blur-sm border border-white/20 text-center">
+            <p className="text-sm text-white/90 leading-relaxed">
+              {status}
+            </p>
+            {recognizedDevice && deviceLabel && (
+              <p className="text-xs text-green-400/80 mt-1">
+                ✓ {deviceLabel}
+              </p>
+            )}
+          </div>
         </div>
       </div>
       <div className="sr-only" aria-live="polite">
