@@ -1,64 +1,91 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
-const ELEVENLABS_BASE = "https://api.elevenlabs.io/v1/text-to-speech";
+const audioCache = new Map<string, Buffer>();
+const MAX_CACHE_SIZE = 50;
 
-export async function POST(request: Request) {
+const bufferToArrayBuffer = (buffer: Buffer): ArrayBuffer =>
+  buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer;
+
+export async function POST(req: NextRequest) {
   try {
-    const { text } = await request.json();
+    const { text } = await req.json();
     if (!text || typeof text !== "string") {
-      return NextResponse.json(
-        { error: "Text is required to generate voice." },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Text required" }, { status: 400 });
+    }
+
+    const normalized = text.trim().toLowerCase();
+    if (audioCache.has(normalized)) {
+      const cached = audioCache.get(normalized)!;
+      return new NextResponse(bufferToArrayBuffer(cached), {
+        headers: {
+          "Content-Type": "audio/mpeg",
+          "X-Cache": "HIT",
+        },
+      });
     }
 
     const apiKey = process.env.ELEVENLABS_API_KEY;
     const voiceId = process.env.ELEVENLABS_VOICE_ID;
     if (!apiKey || !voiceId) {
       return NextResponse.json(
-        { error: "ElevenLabs credentials (API_KEY + VOICE_ID) missing." },
+        { error: "ElevenLabs credentials missing." },
         { status: 500 }
       );
     }
 
-    const response = await fetch(`${ELEVENLABS_BASE}/${voiceId}`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "xi-api-key": apiKey,
-      },
-      body: JSON.stringify({
-        text,
-        voice_settings: {
-          stability: 0.35,
-          similarity_boost: 0.65,
+    const response = await fetch(
+      `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "xi-api-key": apiKey,
         },
-      }),
-    });
+        body: JSON.stringify({
+          text,
+          model_id: "eleven_turbo_v2",
+          voice_settings: {
+            stability: 0.5,
+            similarity_boost: 0.75,
+            style: 0.0,
+            use_speaker_boost: false,
+          },
+          optimize_streaming_latency: 4,
+        }),
+      }
+    );
 
     if (!response.ok) {
-      const errorText = await response.text();
+      const errorBody = await response.text();
+      console.error("ElevenLabs error:", errorBody);
       return NextResponse.json(
-        { error: errorText || "Voice synthesis failed." },
+        { error: "Voice generation failed." },
         { status: response.status }
       );
     }
 
-    const buffer = Buffer.from(await response.arrayBuffer());
-    const base64Audio = buffer.toString("base64");
-    const mime = response.headers.get("content-type") ?? "audio/mpeg";
+    const audioBuffer = Buffer.from(await response.arrayBuffer());
 
-    return NextResponse.json({
-      audio: base64Audio,
-      mime,
+    if (audioCache.size >= MAX_CACHE_SIZE) {
+      const iterator = audioCache.keys().next();
+      if (!iterator.done) {
+        audioCache.delete(iterator.value);
+      }
+    }
+    audioCache.set(normalized, audioBuffer);
+
+    return new NextResponse(bufferToArrayBuffer(audioBuffer), {
+      headers: {
+        "Content-Type": "audio/mpeg",
+        "X-Cache": "MISS",
+      },
     });
   } catch (error) {
-    console.error(error);
-    const message =
-      error instanceof Error
-        ? error.message
-        : "Unable to contact the voice service.";
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error("Voice API error:", error);
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 }
+    );
   }
 }
 
