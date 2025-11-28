@@ -29,6 +29,7 @@ const hashImageData = (imageData: string) => {
 };
 
 const parseResult = (parsed: Record<string, unknown>): RecognitionPayload => {
+  const isDevice = parsed?.is_device === true;
   const category =
     typeof parsed?.category === "string" && parsed.category.trim().length > 0
       ? parsed.category.trim()
@@ -55,7 +56,7 @@ const parseResult = (parsed: Record<string, unknown>): RecognitionPayload => {
     description,
     highlights: highlights.slice(0, 5),
     shortDescription: shortDescription || "Device detected",
-    deviceFound: description !== "Unable to identify product",
+    deviceFound: isDevice && description !== "Unable to identify product",
     raw: JSON.stringify(parsed),
   };
 };
@@ -104,25 +105,39 @@ export async function POST(req: NextRequest) {
             content: [
               {
                 type: "text",
-                text: `Analyze this product image. Respond ONLY with valid JSON in this exact format (no markdown, no explanation):
+                text: `Look at this image and identify any electronic device, gadget, appliance, or technical product visible.
+
+If you see a device (phone, tablet, laptop, remote, charger, cable, game console, camera, headphones, smart device, appliance, etc.), respond with valid JSON:
 {
-  "category": "product type in 2-3 words",
-  "description": "concise description in 15-25 words",
-  "highlights": ["feature 1", "feature 2", "feature 3"]
+  "product_name": "specific device name or model if visible",
+  "category": "device type in 2-3 words",
+  "description": "brief description in 15-25 words",
+  "highlights": ["visible feature 1", "visible feature 2", "visible feature 3"],
+  "is_device": true
 }
-Keep it brief and accurate. Focus on visible features.`,
+
+If NO technical device is visible (just a person, wall, random object, etc.), respond:
+{
+  "product_name": "No device detected",
+  "category": "Not a device",
+  "description": "Please point your camera at an electronic device or appliance",
+  "highlights": [],
+  "is_device": false
+}
+
+Respond ONLY with the JSON, no markdown or explanation.`,
               },
               {
                 type: "image_url",
                 image_url: {
                   url: image,
-                  detail: "low",
+                  detail: "high",
                 },
               },
             ],
           },
         ],
-        max_tokens: 200,
+        max_tokens: 250,
         temperature: 0.3,
       });
     } catch (apiError) {
