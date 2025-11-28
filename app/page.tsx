@@ -561,6 +561,8 @@ export default function Home() {
 
         if (!structuredResult.deviceFound) {
           recordAction("No technical product found");
+          // Don't clear existing device if we fail to detect on this scan
+          // Keep the last known device
           return;
         }
 
@@ -584,12 +586,13 @@ export default function Home() {
         setLastSpoken(voiceText);
         setCooldownUntil(performance.now() + 4000);
       } catch (error) {
-        console.error(error);
+        console.error("❌ Scan error:", error);
         const message =
           error instanceof Error
             ? error.message
             : "Something interrupted the scan.";
         recordAction(message);
+        // Don't clear device on error - keep last known device
       } finally {
         setIsAnalyzing(false);
       }
