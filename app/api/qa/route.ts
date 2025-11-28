@@ -45,6 +45,11 @@ const sendSseEvent = async (
 export async function POST(request: Request) {
   try {
     const { deviceDescription, transcript } = await request.json();
+
+    console.log("🔧 QA API RECEIVED:");
+    console.log("  deviceDescription:", deviceDescription);
+    console.log("  transcript:", transcript);
+
     if (!transcript || typeof transcript !== "string") {
       return NextResponse.json(
         { error: "Transcript text is required." },
@@ -65,6 +70,10 @@ export async function POST(request: Request) {
 User: ${transcript}`
       : `No device detected yet
 User: ${transcript}`;
+
+    console.log("📝 FULL PROMPT BEING SENT TO LLM:");
+    console.log(userPrompt);
+    console.log("---");
 
     const upstream = await fetch(OPENAI_ENDPOINT, {
       method: "POST",
