@@ -369,7 +369,6 @@ export default function Home() {
     if (audioUnlocked) return;
     setAudioUnlocked(true);
     setNeedsAudioUnlock(false);
-    setMicReady(true);
     setStatus("Audio unlocked—camera will announce when ready.");
   }, [audioUnlocked]);
 
