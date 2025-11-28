@@ -608,13 +608,15 @@ export default function Home() {
   );
 
   useEffect(() => {
-    // Passive background scanning every 5 seconds
-    // Scans quietly without blocking conversation or showing "reviewing" messages
+    // Passive background scanning every 8 seconds (less aggressive)
+    // Scans quietly without blocking conversation
     const scanInterval = setInterval(() => {
-      if (!cameraReady || isAnalyzing || !audioUnlocked) return;
-      // Scan passively in background
-      handleScan();
-    }, 5000);
+      if (!cameraReady || !audioUnlocked) return;
+      // Scan passively in background - don't block if already analyzing
+      if (!isAnalyzing) {
+        handleScan();
+      }
+    }, 8000);
 
     return () => {
       clearInterval(scanInterval);
