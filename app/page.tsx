@@ -502,7 +502,6 @@ export default function Home() {
       lastScanRef.current = now;
       const snapshot = overrideSnapshot ?? captureFrame();
       if (!snapshot) {
-        setStatus("No frame captured yet—waiting for a device.");
         return;
       }
 
@@ -510,7 +509,7 @@ export default function Home() {
 
       try {
         setIsAnalyzing(true);
-        setStatus("Sending the scene to OpenAI...");
+        // Don't update status during scan - keep conversation flowing
         recordAction("Recognizing product");
 
         let structuredResult: RecognitionResult | null = null;
@@ -557,17 +556,21 @@ export default function Home() {
         }
 
         if (!structuredResult.deviceFound) {
-          setStatus(structuredResult.shortDescription);
           recordAction("No technical product found");
           return;
         }
 
+        // Silently update device label without interrupting conversation
         const voiceText = structuredResult.shortDescription;
         if (performance.now() < cooldownUntil && lastSpoken === voiceText) {
-          setStatus("Still reviewing the device...");
           return;
         }
-        setStatus(`${voiceText} detected.`);
+
+        // Only update status if not currently listening or speaking
+        if (!listening && !isSpeakingRef.current) {
+          setStatus(`${voiceText} detected.`);
+        }
+
         recordAction("Description received");
         setRecognizedDevice(true);
         setDeviceLabel(structuredResult.shortDescription);
@@ -579,25 +582,36 @@ export default function Home() {
           error instanceof Error
             ? error.message
             : "Something interrupted the scan.";
-        setStatus(message);
         recordAction(message);
       } finally {
         setIsAnalyzing(false);
       }
     },
-    [captureFrame, recordAction, cameraReady, isAnalyzing, cooldownUntil, lastSpoken]
+    [captureFrame, recordAction, cameraReady, isAnalyzing, cooldownUntil, lastSpoken, listening]
   );
 
   useEffect(() => {
-    // Disable aggressive auto-scanning - only scan once on camera ready
-    // Device detection is optional, don't block conversation
-    return () => {};
-  }, []);
+    // Passive background scanning every 5 seconds
+    // Scans quietly without blocking conversation or showing "reviewing" messages
+    const scanInterval = setInterval(() => {
+      if (!cameraReady || isAnalyzing || !audioUnlocked) return;
+      // Scan passively in background
+      handleScan();
+    }, 5000);
+
+    return () => {
+      clearInterval(scanInterval);
+    };
+  }, [cameraReady, handleScan, isAnalyzing, audioUnlocked]);
 
   useEffect(() => {
-    // Don't auto-scan on camera ready - let user talk first
-    // Device detection happens in background, doesn't block conversation
-  }, []);
+    // Do one initial scan after camera is ready
+    if (cameraReady && audioUnlocked) {
+      setTimeout(() => {
+        handleScan();
+      }, 2000);
+    }
+  }, [cameraReady, audioUnlocked, handleScan]);
 
   return (
     <main className="relative h-screen w-full bg-slate-950">
