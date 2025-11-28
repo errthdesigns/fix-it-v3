@@ -29,7 +29,8 @@ const hashImageData = (imageData: string) => {
 };
 
 const parseResult = (parsed: Record<string, unknown>): RecognitionPayload => {
-  const isDevice = parsed?.is_device === true;
+  // Default to true unless explicitly set to false
+  const isDevice = parsed?.is_device !== false;
   const category =
     typeof parsed?.category === "string" && parsed.category.trim().length > 0
       ? parsed.category.trim()
@@ -51,12 +52,20 @@ const parseResult = (parsed: Record<string, unknown>): RecognitionPayload => {
       ? (parsed.product_name as string).trim()
       : category.slice(0, 40).trim();
 
+  // Device is found if is_device is not explicitly false and we have valid data
+  const deviceFound = isDevice &&
+    category !== "Not a device" &&
+    category !== "Unknown product" &&
+    description !== "Unable to identify product" &&
+    !description.includes("No device detected") &&
+    !description.includes("point your camera");
+
   return {
     category,
     description,
     highlights: highlights.slice(0, 5),
     shortDescription: shortDescription || "Device detected",
-    deviceFound: isDevice && description !== "Unable to identify product",
+    deviceFound,
     raw: JSON.stringify(parsed),
   };
 };
@@ -172,11 +181,14 @@ Respond ONLY with the JSON, no markdown or explanation.`,
     }
 
     const cleaned = serialized.replace(/```json\s*/gi, "").replace(/```\s*/g, "").trim();
+    console.log("OpenAI vision response:", cleaned);
 
     let normalized: RecognitionPayload;
     try {
       const parsed = JSON.parse(cleaned);
+      console.log("Parsed JSON:", parsed);
       normalized = parseResult(parsed as Record<string, unknown>);
+      console.log("Normalized result - deviceFound:", normalized.deviceFound);
     } catch (parseError) {
       console.warn("Vision parse fallback:", parseError);
       normalized = fallbackResult(cleaned);
