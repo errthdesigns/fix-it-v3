@@ -66,7 +66,6 @@ export default function Home() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [recentActions, setRecentActions] = useState<string[]>([]);
   const [recognizedDevice, setRecognizedDevice] = useState(false);
-  const [micClicks, setMicClicks] = useState(0);
   const [deviceLabel, setDeviceLabel] = useState<string | null>(null);
   const [listening, setListening] = useState(false);
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
@@ -77,6 +76,10 @@ export default function Home() {
   const [micReady, setMicReady] = useState(false);
   const [audioUnlocked, setAudioUnlocked] = useState(false);
   const [needsAudioUnlock, setNeedsAudioUnlock] = useState(true);
+  const scanErrorCountRef = useRef(0);
+  const scanIntervalRef = useRef(3000); // Start with 3 seconds
+  const [userTranscript, setUserTranscript] = useState<string>("");
+  const hasProcessedQuestionRef = useRef(false);
 
   const recordAction = useCallback(
     (message: string) => {
@@ -90,13 +93,21 @@ export default function Home() {
       const trimmed = line.trim();
       if (!trimmed) return;
       try {
+        // Add timeout to fetch request (10 seconds)
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
+
         const voiceResponse = await fetch("/api/voice", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({ text: trimmed }),
+          signal: controller.signal,
         });
+
+        clearTimeout(timeoutId);
+
         if (!voiceResponse.ok) {
           const errorText = await voiceResponse.text();
           throw new Error(errorText || "Voice synthesis failed.");
@@ -115,22 +126,47 @@ export default function Home() {
           audioElement.src = audioUrl;
           await audioElement.play().catch((err) => {
             console.error("Voice playback failed", err);
+            throw err; // Re-throw to trigger catch block
           });
-          await new Promise<void>((resolve) => {
+
+          // Add timeout to audio playback (30 seconds max)
+          await new Promise<void>((resolve, reject) => {
             if (!audioElement) {
               resolve();
               return;
             }
-            const handleEnded = () => {
+
+            const playbackTimeout = setTimeout(() => {
               audioElement.removeEventListener("ended", handleEnded);
+              audioElement.removeEventListener("error", handleError);
+              audioElement.pause();
+              reject(new Error("Audio playback timeout"));
+            }, 30000);
+
+            const handleEnded = () => {
+              clearTimeout(playbackTimeout);
+              audioElement.removeEventListener("ended", handleEnded);
+              audioElement.removeEventListener("error", handleError);
               resolve();
             };
+
+            const handleError = () => {
+              clearTimeout(playbackTimeout);
+              audioElement.removeEventListener("ended", handleEnded);
+              audioElement.removeEventListener("error", handleError);
+              reject(new Error("Audio playback error"));
+            };
+
             audioElement.addEventListener("ended", handleEnded, { once: true });
+            audioElement.addEventListener("error", handleError, { once: true });
           });
         }
       } catch (error) {
-        console.error(error);
-        setStatus("Voice playback failed.");
+        console.error("Voice playback error:", error);
+        // Don't set status here, just log - this allows queue to continue
+        if (error instanceof Error && error.name === 'AbortError') {
+          console.warn("Voice request timed out");
+        }
       }
     },
     [setStatus]
@@ -147,71 +183,32 @@ export default function Home() {
     [playVoiceLine]
   );
 
-  const handleMicClick = useCallback(() => {
-    if (!recognizedDevice || !deviceLabel) {
-      setStatus("Mic will enable once a device is detected.");
-      return;
-    }
+  // Process Q&A when both device and transcript are ready
+  const processQuestion = useCallback(
+    async (deviceDesc: string, transcript: string) => {
+      if (hasProcessedQuestionRef.current) return;
+      hasProcessedQuestionRef.current = true;
 
-    if (listening) {
-      recognitionRef.current?.stop();
-      setListening(false);
-      setStatus("Voice input paused.");
-      lastTranscriptRef.current = "";
-      return;
-    }
-
-    setMicClicks((prev) => prev + 1);
-    setStatus("Listening for your question...");
-    setListening(true);
-    lastTranscriptRef.current = "";
-
-    const SpeechRecognitionCtor =
-      (window as typeof window & {
-        SpeechRecognition?: SpeechRecognitionConstructor;
-        webkitSpeechRecognition?: SpeechRecognitionConstructor;
-      }).SpeechRecognition ||
-      (window as typeof window & {
-        SpeechRecognition?: SpeechRecognitionConstructor;
-        webkitSpeechRecognition?: SpeechRecognitionConstructor;
-      }).webkitSpeechRecognition;
-
-    if (!SpeechRecognitionCtor) {
-      setStatus("Speech recognition is unavailable.");
-      setListening(false);
-      return;
-    }
-
-    const recognition = new SpeechRecognitionCtor();
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = "en-GB";
-
-    recognition.onresult = async (event: SpeechRecognitionEventLike) => {
-      const result = event.results[event.results.length - 1];
-      const interim = result[0]?.transcript?.trim() ?? "";
-      if (!result.isFinal) {
-        setStatus(interim ? `You said: "${interim}"…` : "Listening for your question...");
-        return;
-      }
-      const transcript = interim;
-      if (!transcript || transcript === lastTranscriptRef.current) {
-        return;
-      }
-      lastTranscriptRef.current = transcript;
-      console.log("spoken transcript:", transcript);
       try {
-        recordAction(`Asked about ${deviceLabel}`);
+        recordAction(`Answering question about ${deviceDesc}`);
+        setStatus("Processing your question...");
+
+        const qaController = new AbortController();
+        const qaTimeoutId = setTimeout(() => qaController.abort(), 30000);
+
         const qaResponse = await fetch("/api/qa", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            deviceDescription: deviceLabel,
+            deviceDescription: deviceDesc,
             transcript,
           }),
+          signal: qaController.signal,
         });
+
+        clearTimeout(qaTimeoutId);
 
         if (!qaResponse.ok || !qaResponse.body) {
           const qaError = await qaResponse
@@ -262,7 +259,9 @@ export default function Home() {
             try {
               const payload = JSON.parse(payloadRaw);
               if (payload.error) {
-                throw new Error(payload.error);
+                console.error("Stream error from server:", payload.error);
+                setStatus(`Error: ${payload.error}`);
+                continue;
               }
               if (typeof payload.delta === "string") {
                 aggregated += payload.delta;
@@ -274,9 +273,8 @@ export default function Home() {
                 flushSentences(true);
               }
             } catch (err) {
-              throw err instanceof Error
-                ? err
-                : new Error("Malformed stream payload.");
+              console.error("Failed to parse chunk:", payloadRaw, err);
+              continue;
             }
           }
         }
@@ -288,11 +286,62 @@ export default function Home() {
         setLastSpoken(aggregated);
         setCooldownUntil(performance.now() + 2000);
       } catch (err) {
-        console.error(err);
-        setStatus("Something went wrong with the question.");
-      } finally {
-        // keep recognition running until user toggles mic off
+        console.error("Q&A error:", err);
+        if (err instanceof Error && err.name === 'AbortError') {
+          setStatus("Request timed out. Please try again.");
+        } else {
+          setStatus("Something went wrong with the question.");
+        }
       }
+    },
+    [enqueueSpeech, recordAction]
+  );
+
+  // Auto-start voice recognition (no button needed)
+  const startVoiceRecognition = useCallback(() => {
+    if (listening) return; // Already listening
+
+    const SpeechRecognitionCtor =
+      (window as typeof window & {
+        SpeechRecognition?: SpeechRecognitionConstructor;
+        webkitSpeechRecognition?: SpeechRecognitionConstructor;
+      }).SpeechRecognition ||
+      (window as typeof window & {
+        SpeechRecognition?: SpeechRecognitionConstructor;
+        webkitSpeechRecognition?: SpeechRecognitionConstructor;
+      }).webkitSpeechRecognition;
+
+    if (!SpeechRecognitionCtor) {
+      setStatus("Speech recognition is unavailable.");
+      return;
+    }
+
+    const recognition = new SpeechRecognitionCtor();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = "en-GB";
+
+    recognition.onresult = async (event: SpeechRecognitionEventLike) => {
+      const result = event.results[event.results.length - 1];
+      const interim = result[0]?.transcript?.trim() ?? "";
+
+      if (!result.isFinal) {
+        setStatus(interim ? `You said: "${interim}"…` : "Listening...");
+        return;
+      }
+
+      const transcript = interim;
+      if (!transcript || transcript === lastTranscriptRef.current) {
+        return;
+      }
+
+      lastTranscriptRef.current = transcript;
+      console.log("User transcript:", transcript);
+
+      // Store the transcript - will be processed when device is detected
+      setUserTranscript(transcript);
+      setStatus(`Got it: "${transcript}". Scanning for device...`);
+      recordAction("User spoke");
     };
 
     recognition.onend = () => {
@@ -304,12 +353,13 @@ export default function Home() {
     recognition.onerror = (event: SpeechRecognitionEventLike) => {
       console.error("Speech recognition error", event.error);
       setStatus("Speech recognition error.");
-      setListening(false);
     };
 
     recognitionRef.current = recognition;
     recognition.start();
-  }, [recognizedDevice, deviceLabel, listening, recordAction, enqueueSpeech]);
+    setListening(true);
+    setStatus("Listening... Tell me about your issue.");
+  }, [listening, recordAction]);
 
   useEffect(() => {
     const startCamera = async () => {
@@ -358,12 +408,13 @@ export default function Home() {
     setStatus("Audio unlocked—camera will announce when ready.");
   }, [audioUnlocked]);
 
+  // Auto-start voice recognition after greeting
   useEffect(() => {
     if (hasGreetedRef.current || !audioUnlocked) return;
     hasGreetedRef.current = true;
     (async () => {
       try {
-        const greeting = "Hey, I'm FIX IT. What can I help you with?";
+        const greeting = "Hey, I'm FIX IT. Tell me what's wrong and show me the device.";
         setStatus(greeting);
         const response = await fetch("/api/voice", {
           method: "POST",
@@ -387,14 +438,37 @@ export default function Home() {
         if (audioRef.current) {
           audioRef.current.src = url;
           await audioRef.current.play();
+          // Wait for greeting to finish, then start listening
+          await new Promise<void>((resolve) => {
+            if (!audioRef.current) {
+              resolve();
+              return;
+            }
+            const handleEnded = () => {
+              audioRef.current?.removeEventListener("ended", handleEnded);
+              resolve();
+            };
+            audioRef.current.addEventListener("ended", handleEnded, { once: true });
+          });
         }
         setMicReady(true);
+        // Auto-start voice recognition after greeting
+        startVoiceRecognition();
       } catch (error) {
         console.error(error);
         setMicReady(true);
+        // Still try to start voice recognition even if greeting fails
+        startVoiceRecognition();
       }
     })();
-  }, [audioUnlocked]);
+  }, [audioUnlocked, startVoiceRecognition]);
+
+  // Process Q&A automatically when both device and transcript are ready
+  useEffect(() => {
+    if (deviceLabel && userTranscript && !hasProcessedQuestionRef.current) {
+      processQuestion(deviceLabel, userTranscript);
+    }
+  }, [deviceLabel, userTranscript, processQuestion]);
 
   useEffect(() => {
     const currentAudio = audioRef.current;
@@ -462,13 +536,20 @@ export default function Home() {
           structuredResult = lastRecognitionRef.current.result;
           recordAction("Reuse cached recognition");
         } else {
+          // Add timeout to recognize request (15 seconds)
+          const recognizeController = new AbortController();
+          const recognizeTimeoutId = setTimeout(() => recognizeController.abort(), 15000);
+
           const recognitionResponse = await fetch("/api/recognize", {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
             },
             body: JSON.stringify({ image: snapshot }),
+            signal: recognizeController.signal,
           });
+
+          clearTimeout(recognizeTimeoutId);
 
           const recognitionData = await recognitionResponse.json();
           if (!recognitionResponse.ok) {
@@ -513,13 +594,29 @@ export default function Home() {
         setDeviceLabel(structuredResult.shortDescription);
         setLastSpoken(voiceText);
         setCooldownUntil(performance.now() + 4000);
+
+        // Reset scan interval and error count on success
+        scanErrorCountRef.current = 0;
+        scanIntervalRef.current = 3000;
       } catch (error) {
         console.error(error);
         const message =
           error instanceof Error
             ? error.message
             : "Something interrupted the scan.";
-        setStatus(message);
+
+        // Implement exponential backoff on errors
+        scanErrorCountRef.current += 1;
+        const backoffMultiplier = Math.min(Math.pow(2, scanErrorCountRef.current - 1), 8);
+        scanIntervalRef.current = 3000 * backoffMultiplier; // Max 24 seconds
+
+        // Check for rate limit errors
+        if (message.includes("Rate limit") || message.includes("429")) {
+          setStatus("Rate limit reached. Slowing down scans...");
+          scanIntervalRef.current = 10000; // Back off to 10 seconds on rate limit
+        } else {
+          setStatus(message);
+        }
         recordAction(message);
       } finally {
         setIsAnalyzing(false);
@@ -529,15 +626,25 @@ export default function Home() {
   );
 
   useEffect(() => {
-    const autoInterval = setInterval(() => {
-      if (!cameraReady || isAnalyzing || !audioUnlocked) return;
-      handleScan();
-    }, 1800);
+    let timeoutId: NodeJS.Timeout;
+
+    const scheduleNextScan = () => {
+      timeoutId = setTimeout(() => {
+        if (!cameraReady || isAnalyzing || !audioUnlocked) {
+          scheduleNextScan(); // Retry with same interval
+          return;
+        }
+        handleScan();
+        scheduleNextScan(); // Schedule next scan
+      }, scanIntervalRef.current);
+    };
+
+    scheduleNextScan();
 
     return () => {
-      clearInterval(autoInterval);
+      clearTimeout(timeoutId);
     };
-  }, [cameraReady, captureFrame, handleScan, isAnalyzing, audioUnlocked]);
+  }, [cameraReady, handleScan, isAnalyzing, audioUnlocked]);
 
   useEffect(() => {
     if (cameraReady) {
@@ -563,31 +670,28 @@ export default function Home() {
             muted
             playsInline
           />
-          <button
-            type="button"
-            aria-label="Start voice question"
-            onClick={handleMicClick}
-            className="absolute bottom-6 right-6 z-30 flex h-12 w-12 items-center justify-center rounded-full border border-white/60 bg-white/90 text-slate-900 shadow-xl transition hover:bg-white pointer-events-auto disabled:opacity-60 disabled:cursor-not-allowed"
-            disabled={!micReady}
-          >
-            <svg
-              className="h-6 w-6"
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 24 24"
-              fill="currentColor"
-            >
-              <path d="M12 14c1.657 0 3-1.343 3-3V6a3 3 0 0 0-6 0v5c0 1.657 1.343 3 3 3zm5-3c0 2.761-2.239 5-5 5s-5-2.239-5-5H5c0 3.533 2.613 6.432 6 6.92V22h2v-4.08c3.387-.488 6-3.387 6-6.92h-2z" />
-            </svg>
-          </button>
+          {/* Listening status indicator */}
+          {listening && (
+            <div className="absolute bottom-6 right-6 z-30 flex h-12 w-12 items-center justify-center rounded-full border border-red-500 bg-red-500/90 text-white shadow-xl pointer-events-none animate-pulse">
+              <svg
+                className="h-6 w-6"
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+              >
+                <path d="M12 14c1.657 0 3-1.343 3-3V6a3 3 0 0 0-6 0v5c0 1.657 1.343 3 3 3zm5-3c0 2.761-2.239 5-5 5s-5-2.239-5-5H5c0 3.533 2.613 6.432 6 6.92V22h2v-4.08c3.387-.488 6-3.387 6-6.92h-2z" />
+              </svg>
+            </div>
+          )}
           {needsAudioUnlock && !audioUnlocked && (
             <div className="pointer-events-auto absolute bottom-20 left-1/2 z-30 w-[90%] max-w-sm -translate-x-1/2 rounded-2xl border border-white/40 bg-black/85 px-6 py-6 text-center text-white shadow-2xl backdrop-blur">
               <p className="text-sm font-semibold uppercase tracking-[0.45em] text-white/75">
                 Ready to fix it
               </p>
               <ol className="mt-4 space-y-2 text-base leading-relaxed text-white/90 text-left list-decimal list-inside">
-                <li>Point your camera at the device.</li>
-                <li>Speak aloud saying what’s not working.</li>
-                <li>FIX IT will look through your camera and talk you through the fix.</li>
+                <li>Tap START and FIX IT will start listening.</li>
+                <li>Point your camera at the device while telling FIX IT what's wrong.</li>
+                <li>FIX IT will recognize the device and guide you through the fix.</li>
               </ol>
               <button
                 type="button"
@@ -598,9 +702,12 @@ export default function Home() {
               </button>
             </div>
           )}
-          <div className="pointer-events-none absolute bottom-2 right-6 text-xs uppercase tracking-[0.3em] text-white/70">
-            clicks: {micClicks}
-          </div>
+          {/* Status indicator - show when listening */}
+          {listening && (
+            <div className="pointer-events-none absolute bottom-20 right-6 text-xs uppercase tracking-[0.3em] text-white bg-red-500/80 px-3 py-1 rounded-full">
+              ● LISTENING
+            </div>
+          )}
         </div>
       </div>
       <div className="sr-only" aria-live="polite">
