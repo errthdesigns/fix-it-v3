@@ -1,105 +1,87 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import OpenAI from "openai";
 
-const OPENAI_ENDPOINT = "https://api.openai.com/v1/responses";
-const MODEL = "gpt-4o-mini";
+type RecognitionPayload = {
+  description: string;
+  shortDescription: string;
+  highlights: string[];
+  category: string;
+  deviceFound: boolean;
+  raw?: string;
+};
 
-const SYSTEM_PROMPT = `
-You are the vision and voice brain for an app called FIX IT. Mention brands/models whenever you are confident about them (e.g. “iPhone,” “Samsung TV”).
-
-The app uses a live webcam feed to look at what the user is pointing their phone at.
-
-Your ONLY job in this version of the app is:
-
-Look at what’s in the camera frame.
-
-Decide if there is a technical product / device clearly visible.
-
-If there is, say out loud what it is in one short sentence.
-
-If there isn’t, say a short “no device has been located” message.
-
-Only treat something as relevant if it is a tech or household device, including phones, tablets, computers, remotes, game consoles, home appliances, audio gear, routers, printers, etc.
-
-If you are not sure if an item is a device or just decor/furniture, treat it as NOT relevant.
-
-Never describe people, pets, plants, art, furniture, walls, floors, food, drinks, clutter, or any UI overlays. If you only see those things, act as if no relevant product is present.
-
-Always respond with one short sentence, plain casual UK English. Identify the main visible device or reply that nothing technical is detected. No instructions, no explanation about the webcam, and no reference to being an AI model.
-`;
-
-const USER_PROMPT = `
-You are a product intelligence agent. Identify the object in the image, guess the likely category, and explain how a person would use it.
-Always respond with a single JSON object, never with Markdown wrappers. Include the following keys:
-{
-  "description": "A full sentence that explains the object, its brand cues, and what it does.",
-  "product_name": "Only the product name as it appears on the device (brand + model if visible). Keep it very short.",
-  "highlights": ["A short keyword for a notable trait", "..."],
-  "category": "Strong label such as 'kitchen gadget' or 'beauty device'",
-  "confidence": "Optional short phrase about how certain you are.",
-  "device_found": true,
-  "bbox": [0, 0, 0, 0]
-}
-If you are uncertain, state that clearly inside the description.
-`;
-
-type ResponseChunk =
+type CompletionContent =
   | string
-  | {
-      text?: string;
-      value?: string;
-    };
+  | Array<string | { text?: string }>
+  | null;
 
-type ResponseMessage = {
-  content?: ResponseChunk[];
-};
+const visionCache = new Map<string, RecognitionPayload>();
+const MAX_CACHE_SIZE = 50;
 
-const flattenOutputToText = (output?: ResponseMessage[]): string => {
-  const textParts = (output ?? []).flatMap((message) => {
-    return (message.content ?? []).map((chunk) => {
-      if (typeof chunk === "string") {
-        return chunk;
-      }
-      if (chunk && typeof chunk === "object") {
-        if (typeof chunk.text === "string") {
-          return chunk.text;
-        }
-        if (typeof chunk.value === "string") {
-          return chunk.value;
-        }
-      }
-      return "";
-    });
-  });
-
-  return textParts.join(" ").replace(/```json/gi, "").replace(/```/g, "").trim();
-};
-
-const parseJsonSafely = (text: string) => {
-  const candidate = text.trim();
-  try {
-    return JSON.parse(candidate);
-  } catch {
-    // Attempt to extract JSON inside the text.
-    const jsonMatch = candidate.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      try {
-        return JSON.parse(jsonMatch[0]);
-      } catch {
-        return null;
-      }
-    }
+const hashImageData = (imageData: string) => {
+  let hash = 0;
+  const samples = 50;
+  const step = Math.max(1, Math.floor(imageData.length / samples));
+  for (let i = 0; i < samples && i < imageData.length; i += step) {
+    hash = ((hash << 5) - hash + imageData.charCodeAt(i)) | 0;
   }
-  return null;
+  return hash.toString(36);
 };
 
-export async function POST(request: Request) {
+const parseResult = (parsed: Record<string, unknown>): RecognitionPayload => {
+  const category =
+    typeof parsed?.category === "string" && parsed.category.trim().length > 0
+      ? parsed.category.trim()
+      : "Unknown product";
+  const description =
+    typeof parsed?.description === "string" && parsed.description.trim().length > 0
+      ? parsed.description.trim()
+      : "Unable to identify product";
+  const highlights = Array.isArray(parsed?.highlights)
+    ? parsed.highlights
+        .filter(
+          (item): item is string =>
+            typeof item === "string" && item.trim().length > 0
+        )
+        .map((item) => item.trim())
+    : [];
+  const shortDescription =
+    typeof parsed?.product_name === "string" && parsed.product_name.trim().length > 0
+      ? (parsed.product_name as string).trim()
+      : category.slice(0, 40).trim();
+
+  return {
+    category,
+    description,
+    highlights: highlights.slice(0, 5),
+    shortDescription: shortDescription || "Device detected",
+    deviceFound: description !== "Unable to identify product",
+    raw: JSON.stringify(parsed),
+  };
+};
+
+const fallbackResult = (message: string): RecognitionPayload => ({
+  category: "Unknown product",
+  description: message || "Unable to identify product",
+  highlights: [],
+  shortDescription: "No device detected",
+  deviceFound: false,
+  raw: message,
+});
+
+export async function POST(req: NextRequest) {
   try {
-    const { image } = await request.json();
+    const { image } = await req.json();
     if (!image || typeof image !== "string") {
       return NextResponse.json(
-        { error: "Image data is required for recognition." },
+        { error: "Image data required" },
         { status: 400 }
       );
+    }
+
+    const cacheKey = hashImageData(image);
+    if (visionCache.has(cacheKey)) {
+      return NextResponse.json({ ...visionCache.get(cacheKey)!, cached: true });
     }
 
     const apiKey = process.env.OPENAI_API_KEY;
@@ -110,139 +92,94 @@ export async function POST(request: Request) {
       );
     }
 
-    const response = await fetch(OPENAI_ENDPOINT, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-        body: JSON.stringify({
-          model: MODEL,
-          temperature: 0.2,
-          max_output_tokens: 500,
-          top_p: 0.95,
-          input: [
+    const openai = new OpenAI({ apiKey });
+
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        {
+          role: "user",
+          content: [
             {
-              role: "system",
-              content: [
-                {
-                  type: "input_text",
-                  text: SYSTEM_PROMPT,
-                },
-              ],
+              type: "text",
+              text: `Analyze this product image. Respond ONLY with valid JSON in this exact format (no markdown, no explanation):
+{
+  "category": "product type in 2-3 words",
+  "description": "concise description in 15-25 words",
+  "highlights": ["feature 1", "feature 2", "feature 3"]
+}
+Keep it brief and accurate. Focus on visible features.`,
             },
             {
-              role: "user",
-              content: [
-                {
-                  type: "input_text",
-                  text: USER_PROMPT,
-                },
-                {
-                  type: "input_image",
-                  image_url: image,
-                },
-              ],
+              type: "image_url",
+              image_url: {
+                url: image,
+                detail: "low",
+              },
             },
           ],
-        }),
+        },
+      ],
+      max_tokens: 200,
+      temperature: 0.3,
     });
 
-    const payload = await response.json();
-    if (!response.ok) {
-      return NextResponse.json(
-        { error: payload?.error?.message ?? "OpenAI request failed." },
-        { status: response.status }
-      );
+    const content = response.choices[0]?.message?.content as CompletionContent;
+    if (!content) {
+      throw new Error("OpenAI returned an empty response.");
     }
 
-    const rawText = flattenOutputToText(payload.output ?? []);
-    const parsed = parseJsonSafely(rawText) ?? {};
-
-    const description =
-      parsed.description ??
-      rawText ??
-      "OpenAI could not describe this product confidently.";
-    const highlights = Array.isArray(parsed.highlights)
-      ? (parsed.highlights as string[]).filter(Boolean)
-      : [];
-    const category =
-      (typeof parsed.category === "string" && parsed.category) ||
-      (typeof parsed.useCase === "string" && parsed.useCase) ||
-      "Product";
-
-    const booleanFromField = (fieldName: "device_found" | "deviceFound") => {
-      const value = parsed[fieldName];
-      if (typeof value === "boolean") {
-        return value;
-      }
-      if (typeof value === "string") {
-        const normalized = value.trim().toLowerCase();
-        if (["true", "yes", "1"].includes(normalized)) return true;
-        if (["false", "no", "0"].includes(normalized)) return false;
-      }
-      return undefined;
-    };
-
-    const parseBBox = (value: unknown): number[] | null => {
-      if (!Array.isArray(value) || value.length !== 4) return null;
-      const coords = value.map((num) => {
-        if (typeof num !== "number") return NaN;
-        return Math.min(1, Math.max(0, num));
-      });
-      if (coords.some((num) => Number.isNaN(num))) return null;
-      return coords as number[];
-    };
-
-    let parsedDeviceFound =
-      booleanFromField("device_found") ?? booleanFromField("deviceFound");
-
-    if (parsedDeviceFound === undefined) {
-      const lowerText = rawText.toLowerCase();
-      parsedDeviceFound = lowerText.includes("no device detected")
-        ? false
-        : true;
+    let serialized = "";
+    if (typeof content === "string") {
+      serialized = content;
+    } else if (Array.isArray(content)) {
+      serialized = content
+        .map((block) => {
+          if (typeof block === "string") return block;
+          if (typeof block === "object" && block && "text" in block) {
+            const text = block.text;
+            return typeof text === "string" ? text : "";
+          }
+          return "";
+        })
+        .join("\n");
+    } else {
+      serialized = JSON.stringify(content);
     }
 
-    const createShort = (value: string) => {
-      const withoutNewlines = value.replace(/\s+/g, " ").trim();
-      const separatorIndex = withoutNewlines.indexOf(".");
-      if (separatorIndex === -1 || separatorIndex > 120) {
-        return withoutNewlines.slice(0, 120).trim();
+    const cleaned = serialized.replace(/```json\s*/gi, "").replace(/```\s*/g, "").trim();
+
+    let normalized: RecognitionPayload;
+    try {
+      const parsed = JSON.parse(cleaned);
+      normalized = parseResult(parsed as Record<string, unknown>);
+    } catch (parseError) {
+      console.warn("Vision parse fallback:", parseError);
+      normalized = fallbackResult(cleaned);
+    }
+
+    if (visionCache.size >= MAX_CACHE_SIZE) {
+      const iterator = visionCache.keys().next();
+      if (!iterator.done) {
+        visionCache.delete(iterator.value);
       }
-      return withoutNewlines.slice(0, separatorIndex).trim();
-    };
+    }
+    visionCache.set(cacheKey, normalized);
 
-    const shortDescriptionFromParsed =
-      (parsed.product_name as string | undefined) ??
-      (parsed.productName as string | undefined);
-
-    const shortDescription =
-      shortDescriptionFromParsed ??
-      (parsed.shortDescription as string | undefined) ??
-      (parsed.short_description as string | undefined) ??
-      createShort(description);
-
-    const parsedBoundingBox =
-      parseBBox(parsed.bbox) ??
-      parseBBox(parsed.bounding_box) ??
-      parseBBox(parsed.boundingBox);
-
-    return NextResponse.json({
-      description,
-      shortDescription,
-      highlights,
-      category,
-      raw: rawText,
-      deviceFound: parsedDeviceFound,
-      bbox: parsedBoundingBox,
-    });
+    return NextResponse.json(normalized);
   } catch (error) {
-    console.error(error);
+    console.error("Vision API error:", error);
+    if (typeof error === "object" && error && "status" in error) {
+      const errWithStatus = error as { status?: number };
+      if (errWithStatus.status === 429) {
+        return NextResponse.json(
+          { error: "Rate limit exceeded. Please wait a moment." },
+          { status: 429 }
+        );
+      }
+    }
     const message =
-      error instanceof Error
-        ? error.message
-        : "Unable to run the recognition request.";
+      error instanceof Error ? error.message : "Failed to process image.";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
