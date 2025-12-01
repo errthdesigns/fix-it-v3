@@ -75,8 +75,6 @@ export default function Home() {
   const [cooldownUntil, setCooldownUntil] = useState(0);
   const [lastSpoken, setLastSpoken] = useState<string>("");
   const [displayResponse, setDisplayResponse] = useState<string>("");
-  const [highlight, setHighlight] = useState<{x: number, y: number, size: number} | null>(null);
-  const highlightTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const hasGreetedRef = useRef(false);
   const [audioUnlocked, setAudioUnlocked] = useState(false);
   const [needsAudioUnlock, setNeedsAudioUnlock] = useState(true);
@@ -229,10 +227,8 @@ export default function Home() {
         console.log("  Device:", deviceLabelRef.current || "null");
         console.log("  Question:", transcript);
 
-        // Capture current camera frame for visual context (lower quality for speed)
-        console.log("📸 Capturing frame...");
-        const currentFrame = captureFrame();
-        console.log("📸 Frame captured, size:", currentFrame ? `${currentFrame.length} chars` : "null");
+        // Don't send image with every question - too much bandwidth on slow WiFi
+        // Device context from deviceLabel is enough
 
         // Add timeout to prevent hanging on slow WiFi
         const controller = new AbortController();
@@ -250,7 +246,7 @@ export default function Home() {
           body: JSON.stringify({
             deviceDescription: deviceLabelRef.current || null,
             transcript,
-            image: currentFrame,
+            // Removed image to reduce bandwidth
           }),
           signal: controller.signal,
         }).finally(() => clearTimeout(timeoutId));
@@ -315,53 +311,15 @@ export default function Home() {
                 throw new Error(payload.error);
               }
 
-              // Handle highlight coordinates
-              if (payload.highlight) {
-                console.log("🎯 Highlight received:", payload.highlight);
-                // Clear any existing timeout
-                if (highlightTimeoutRef.current) {
-                  clearTimeout(highlightTimeoutRef.current);
-                }
-                setHighlight(payload.highlight);
-                // Auto-clear highlight after 5 seconds
-                highlightTimeoutRef.current = setTimeout(() => {
-                  setHighlight(null);
-                  highlightTimeoutRef.current = null;
-                }, 5000);
-              }
-
               if (typeof payload.delta === "string") {
                 aggregated += payload.delta;
                 setStatus(aggregated);
-                // Don't flush sentences yet - wait for full response to parse JSON
+                setDisplayResponse(aggregated);
+                flushSentences();
               }
               if (payload.done || payload.text) {
-                console.log("🏁 Response complete, aggregated:", aggregated.slice(0, 100));
+                console.log("🏁 Response complete:", aggregated);
                 doneSignal = true;
-
-                // Try to parse as JSON to extract response text
-                let finalText = aggregated;
-                try {
-                  const parsed = JSON.parse(aggregated);
-                  console.log("📝 Parsed LLM response:", parsed);
-                  if (parsed.response) {
-                    finalText = parsed.response;
-                    setDisplayResponse(parsed.response);
-                    setStatus(parsed.response);
-                    // Update aggregated for voice synthesis - THIS IS KEY
-                    aggregated = parsed.response;
-                    consumedLength = 0; // Reset for flushing the actual response
-                    console.log("✅ Speaking only:", parsed.response);
-                  } else {
-                    setDisplayResponse(aggregated);
-                  }
-                } catch (parseErr) {
-                  // Not JSON, use as-is
-                  console.log("⚠️ Response not JSON, using as-is:", aggregated.slice(0, 100));
-                  setDisplayResponse(aggregated);
-                }
-
-                // NOW flush sentences with the parsed response text
                 flushSentences(true);
               }
             } catch (err) {
@@ -409,13 +367,8 @@ export default function Home() {
 
     recognition.onstart = () => {
       isStartingRecognitionRef.current = false;
-      // Clear the display and highlight when user starts talking
+      // Clear the display when user starts talking
       setDisplayResponse("");
-      if (highlightTimeoutRef.current) {
-        clearTimeout(highlightTimeoutRef.current);
-        highlightTimeoutRef.current = null;
-      }
-      setHighlight(null);
       // If AI is speaking when user starts talking, interrupt it
       if (isSpeakingRef.current && audioRef.current) {
         audioRef.current.pause();
@@ -763,39 +716,6 @@ export default function Home() {
             muted
             playsInline
           />
-
-          {/* Highlight Overlay */}
-          {highlight && (
-            <div className="absolute inset-0 pointer-events-none z-20">
-              {/* Outer pulsing ring */}
-              <div
-                className="absolute rounded-full border-[4px] border-white/80 animate-ping"
-                style={{
-                  left: `${highlight.x * 100}%`,
-                  top: `${highlight.y * 100}%`,
-                  width: `${highlight.size * 200}%`,
-                  paddingBottom: `${highlight.size * 200}%`,
-                  transform: 'translate(-50%, -50%)',
-                  maxWidth: '150px',
-                  maxHeight: '150px',
-                }}
-              />
-              {/* Main highlight circle */}
-              <div
-                className="absolute rounded-full border-[4px] border-white shadow-2xl animate-pulse"
-                style={{
-                  left: `${highlight.x * 100}%`,
-                  top: `${highlight.y * 100}%`,
-                  width: `${highlight.size * 200}%`,
-                  paddingBottom: `${highlight.size * 200}%`,
-                  transform: 'translate(-50%, -50%)',
-                  maxWidth: '150px',
-                  maxHeight: '150px',
-                  boxShadow: '0 0 30px rgba(255, 255, 255, 1), 0 0 60px rgba(255, 255, 255, 0.6), inset 0 0 20px rgba(255, 255, 255, 0.4)',
-                }}
-              />
-            </div>
-          )}
 
           {/* Listening Indicator */}
           {listening && (

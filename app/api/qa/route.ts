@@ -3,45 +3,40 @@ import { NextResponse } from "next/server";
 const OPENAI_ENDPOINT = "https://api.openai.com/v1/chat/completions";
 const MODEL = "gpt-4o";
 
-const SYSTEM_PROMPT = `You are FIX IT - talk like a REAL person, not a robot! You can see what they're showing you through their camera.
+const SYSTEM_PROMPT = `You are FIX IT - talk like a REAL person, not a robot! Help people fix their devices with friendly, concise advice.
 
 How to sound natural:
 - React authentically - "oh!", "wait", "hmm", "ah yeah!"
-- Sound conversational, like you're actually chatting with a friend
+- Sound conversational, like chatting with a friend
 - Use natural speech patterns, not scripted responses
 - Show personality through tone and word choice
 - Keep it brief (max 10 words) but NATURAL
 - Don't sound like customer service - sound like their tech-savvy buddy
 
-IMPORTANT: When helping with a specific button, port, or part:
-- Respond with JSON: {"response": "your answer", "highlight": {"x": 0.5, "y": 0.3, "size": 0.08}}
-- x and y are percentages (0.0 to 1.0) of image width/height for the EXACT CENTER of the button/part
-- Measure carefully - look at where the button actually is in the frame
-- size is the radius as a percentage (typically 0.06 to 0.12 depending on button size)
-- Be PRECISE with coordinates - look at the actual position in the image
-- If no specific button to highlight, just return {"response": "your answer"}
+When you know what device they have, give device-specific help.
+When you don't know, ask them to show you or describe it.
 
 Examples:
 
-User shows remote with power button at top center: "How do I turn the TV on?"
-Response: {"response": "Oh easy! See that red button? Press it!", "highlight": {"x": 0.5, "y": 0.15, "size": 0.07}}
+Detected device: TV Remote Control
+User: "How do I turn the TV on?"
+You: "Press the power button, usually red on top!"
 
-User shows remote with button in middle-left area: "This one?"
-Response: {"response": "Yeah that's the one! Go for it!", "highlight": {"x": 0.35, "y": 0.45, "size": 0.06}}
+Detected device: iPhone
+User: "How do I charge this?"
+You: "Lightning port on the bottom, plug it in!"
 
-User shows phone with charging port at bottom: "How do I charge this?"
-Response: {"response": "Ah, USB-C port on the bottom there!", "highlight": {"x": 0.5, "y": 0.92, "size": 0.08}}
-
-User shows laptop with power button top-right of keyboard: "Where's the power button?"
-Response: {"response": "Top right corner of the keyboard!", "highlight": {"x": 0.85, "y": 0.35, "size": 0.05}}
+No device detected
+User: "How do I turn this on?"
+You: "What device are you trying to turn on?"
 
 User: "How are you?"
-Response: {"response": "Oh hey! I'm good, how's your day going?"}
+You: "Oh hey! I'm good, how's your day going?"
 
 User: "Thanks!"
-Response: {"response": "Course! Anything else buggin' you?"}
+You: "Course! Anything else buggin' you?"
 
-Always return valid JSON. Include highlight ONLY when referring to a specific button/port/part visible in the image.
+Be SHORT. Be HELPFUL. Be CONVERSATIONAL.
 `;
 
 const sendSseEvent = async (
@@ -54,12 +49,11 @@ const sendSseEvent = async (
 
 export async function POST(request: Request) {
   try {
-    const { deviceDescription, transcript, image } = await request.json();
+    const { deviceDescription, transcript } = await request.json();
 
     console.log("🔧 QA API RECEIVED:");
     console.log("  deviceDescription:", deviceDescription);
     console.log("  transcript:", transcript);
-    console.log("  image:", image ? "yes" : "no");
 
     if (!transcript || typeof transcript !== "string") {
       return NextResponse.json(
@@ -76,25 +70,13 @@ export async function POST(request: Request) {
       );
     }
 
-    const textPrompt = deviceDescription
+    const userPrompt = deviceDescription
       ? `Detected device: ${deviceDescription}\nUser: ${transcript}`
       : `User: ${transcript}`;
 
     console.log("📝 PROMPT TEXT:");
-    console.log(textPrompt);
+    console.log(userPrompt);
     console.log("---");
-
-    // Build user message with vision if image is available
-    const userContent: Array<{ type: string; text?: string; image_url?: { url: string } }> = [
-      { type: "text", text: textPrompt }
-    ];
-
-    if (image && typeof image === "string") {
-      userContent.push({
-        type: "image_url",
-        image_url: { url: image }
-      });
-    }
 
     const upstream = await fetch(OPENAI_ENDPOINT, {
       method: "POST",
@@ -110,7 +92,7 @@ export async function POST(request: Request) {
         stream: true,
         messages: [
           { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: userContent },
+          { role: "user", content: userPrompt },
         ],
       }),
     });
@@ -164,28 +146,7 @@ export async function POST(request: Request) {
                 fullText += content;
                 await sendSseEvent(writer, { delta: content });
               } else if (parsed.choices && parsed.choices[0]?.finish_reason) {
-                // Try to parse response as JSON to extract highlight data
-                try {
-                  const responseJson = JSON.parse(fullText);
-                  if (responseJson.response) {
-                    // Send the highlight data if present
-                    if (responseJson.highlight) {
-                      await sendSseEvent(writer, {
-                        highlight: responseJson.highlight
-                      });
-                    }
-                    await sendSseEvent(writer, {
-                      done: true,
-                      text: fullText,
-                      response: responseJson.response
-                    });
-                  } else {
-                    await sendSseEvent(writer, { done: true, text: fullText });
-                  }
-                } catch {
-                  // Not JSON, send as-is
-                  await sendSseEvent(writer, { done: true, text: fullText });
-                }
+                await sendSseEvent(writer, { done: true, text: fullText });
                 doneEmitted = true;
               } else if (parsed.error) {
                 await sendSseEvent(writer, {
