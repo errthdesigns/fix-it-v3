@@ -74,6 +74,7 @@ export default function Home() {
   const lastTranscriptRef = useRef("");
   const [cooldownUntil, setCooldownUntil] = useState(0);
   const [lastSpoken, setLastSpoken] = useState<string>("");
+  const [displayResponse, setDisplayResponse] = useState<string>("");
   const hasGreetedRef = useRef(false);
   const [audioUnlocked, setAudioUnlocked] = useState(false);
   const [needsAudioUnlock, setNeedsAudioUnlock] = useState(true);
@@ -284,6 +285,7 @@ export default function Home() {
               if (typeof payload.delta === "string") {
                 aggregated += payload.delta;
                 setStatus(aggregated);
+                setDisplayResponse(aggregated);
                 flushSentences();
               }
               if (payload.done || payload.text) {
@@ -321,6 +323,8 @@ export default function Home() {
 
     recognition.onstart = () => {
       isStartingRecognitionRef.current = false;
+      // Clear the display when user starts talking
+      setDisplayResponse("");
       // If AI is speaking when user starts talking, interrupt it
       if (isSpeakingRef.current && audioRef.current) {
         audioRef.current.pause();
@@ -678,27 +682,14 @@ export default function Home() {
             </div>
           )}
 
-          {/* Visible Status Overlay */}
-          <div className={`pointer-events-none absolute bottom-8 left-1/2 -translate-x-1/2 max-w-lg px-8 py-4 rounded-2xl backdrop-blur-md border-2 text-center transition-all duration-300 ${
-            listening
-              ? 'bg-red-500/20 border-red-500/60'
-              : 'bg-black/90 border-white/30'
-          }`}>
-            {listening && (
-              <p className="text-xs font-bold uppercase tracking-wider text-red-400 mb-2 flex items-center justify-center gap-2">
-                <span className="inline-block h-2 w-2 rounded-full bg-red-500 animate-pulse" />
-                LISTENING
+          {/* FIX IT Response Display */}
+          {displayResponse && (
+            <div className="pointer-events-none absolute bottom-8 left-1/2 -translate-x-1/2 max-w-lg px-8 py-4 rounded-2xl backdrop-blur-md border-2 text-center transition-all duration-300 bg-black/90 border-white/30">
+              <p className="text-base text-white font-medium leading-relaxed">
+                {displayResponse}
               </p>
-            )}
-            <p className="text-base text-white font-medium leading-relaxed">
-              {status}
-            </p>
-            {recognizedDevice && deviceLabel && !listening && (
-              <p className="text-sm text-green-400 mt-2 font-semibold">
-                ✓ {deviceLabel}
-              </p>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       </div>
       <div className="sr-only" aria-live="polite">
