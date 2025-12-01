@@ -703,7 +703,7 @@ export default function Home() {
           </div>
           <video
             ref={videoRef}
-            className="h-full w-full object-cover pointer-events-none"
+            className="h-full w-full object-contain pointer-events-none"
             autoPlay
             muted
             playsInline
@@ -714,25 +714,29 @@ export default function Home() {
             <div className="absolute inset-0 pointer-events-none z-20">
               {/* Outer pulsing ring */}
               <div
-                className="absolute rounded-full border-[3px] border-white/70 animate-ping"
+                className="absolute rounded-full border-[4px] border-white/80 animate-ping"
                 style={{
                   left: `${highlight.x * 100}%`,
                   top: `${highlight.y * 100}%`,
-                  width: `min(${highlight.size * 100}vw, ${highlight.size * 100}vh)`,
-                  height: `min(${highlight.size * 100}vw, ${highlight.size * 100}vh)`,
+                  width: `${highlight.size * 200}%`,
+                  paddingBottom: `${highlight.size * 200}%`,
                   transform: 'translate(-50%, -50%)',
+                  maxWidth: '150px',
+                  maxHeight: '150px',
                 }}
               />
               {/* Main highlight circle */}
               <div
-                className="absolute rounded-full border-[3px] border-white shadow-2xl animate-pulse"
+                className="absolute rounded-full border-[4px] border-white shadow-2xl animate-pulse"
                 style={{
                   left: `${highlight.x * 100}%`,
                   top: `${highlight.y * 100}%`,
-                  width: `min(${highlight.size * 100}vw, ${highlight.size * 100}vh)`,
-                  height: `min(${highlight.size * 100}vw, ${highlight.size * 100}vh)`,
+                  width: `${highlight.size * 200}%`,
+                  paddingBottom: `${highlight.size * 200}%`,
                   transform: 'translate(-50%, -50%)',
-                  boxShadow: '0 0 25px rgba(255, 255, 255, 0.9), 0 0 50px rgba(255, 255, 255, 0.5), inset 0 0 15px rgba(255, 255, 255, 0.3)',
+                  maxWidth: '150px',
+                  maxHeight: '150px',
+                  boxShadow: '0 0 30px rgba(255, 255, 255, 1), 0 0 60px rgba(255, 255, 255, 0.6), inset 0 0 20px rgba(255, 255, 255, 0.4)',
                 }}
               />
             </div>
