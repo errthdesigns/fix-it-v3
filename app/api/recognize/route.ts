@@ -102,26 +102,28 @@ export async function POST(req: NextRequest) {
           content: [
             {
               type: "text",
-              text: `Analyze this product image. Respond ONLY with valid JSON in this exact format (no markdown, no explanation):
+              text: `Identify the tech device in this image. Respond with JSON only (no markdown):
 {
-  "category": "product type in 2-3 words",
-  "description": "concise description in 15-25 words",
-  "highlights": ["feature 1", "feature 2", "feature 3"]
+  "product_name": "Device name/type (e.g., 'iPhone', 'TV Remote', 'Laptop')",
+  "category": "Device category",
+  "description": "Brief description of the device",
+  "highlights": ["visible feature 1", "visible feature 2"]
 }
-Keep it brief and accurate. Focus on visible features.`,
+
+If no device is visible, use "No device detected" for product_name.`,
             },
             {
               type: "image_url",
               image_url: {
                 url: image,
-                detail: "low",
+                detail: "high",
               },
             },
           ],
         },
       ],
-      max_tokens: 200,
-      temperature: 0.3,
+      max_tokens: 150,
+      temperature: 0.2,
     });
 
     const content = response.choices[0]?.message?.content as CompletionContent;
