@@ -75,6 +75,7 @@ export default function Home() {
   const [cooldownUntil, setCooldownUntil] = useState(0);
   const [lastSpoken, setLastSpoken] = useState<string>("");
   const [displayResponse, setDisplayResponse] = useState<string>("");
+  const [highlight, setHighlight] = useState<{x: number, y: number, size: number} | null>(null);
   const hasGreetedRef = useRef(false);
   const [audioUnlocked, setAudioUnlocked] = useState(false);
   const [needsAudioUnlock, setNeedsAudioUnlock] = useState(true);
@@ -282,14 +283,41 @@ export default function Home() {
               if (payload.error) {
                 throw new Error(payload.error);
               }
+
+              // Handle highlight coordinates
+              if (payload.highlight) {
+                setHighlight(payload.highlight);
+                // Auto-clear highlight after 8 seconds
+                setTimeout(() => setHighlight(null), 8000);
+              }
+
               if (typeof payload.delta === "string") {
                 aggregated += payload.delta;
                 setStatus(aggregated);
-                setDisplayResponse(aggregated);
+                // Don't update display yet - wait for parsed response
                 flushSentences();
               }
               if (payload.done || payload.text) {
                 doneSignal = true;
+
+                // Try to parse as JSON to extract response text
+                let finalText = aggregated;
+                try {
+                  const parsed = JSON.parse(aggregated);
+                  if (parsed.response) {
+                    finalText = parsed.response;
+                    setDisplayResponse(parsed.response);
+                    setStatus(parsed.response);
+                    // Update aggregated for voice synthesis
+                    aggregated = parsed.response;
+                  } else {
+                    setDisplayResponse(aggregated);
+                  }
+                } catch {
+                  // Not JSON, use as-is
+                  setDisplayResponse(aggregated);
+                }
+
                 flushSentences(true);
               }
             } catch (err) {
@@ -323,8 +351,9 @@ export default function Home() {
 
     recognition.onstart = () => {
       isStartingRecognitionRef.current = false;
-      // Clear the display when user starts talking
+      // Clear the display and highlight when user starts talking
       setDisplayResponse("");
+      setHighlight(null);
       // If AI is speaking when user starts talking, interrupt it
       if (isSpeakingRef.current && audioRef.current) {
         audioRef.current.pause();
@@ -653,6 +682,36 @@ export default function Home() {
             muted
             playsInline
           />
+
+          {/* Highlight Overlay */}
+          {highlight && (
+            <div className="absolute inset-0 pointer-events-none z-20">
+              {/* Outer pulsing ring */}
+              <div
+                className="absolute rounded-full border-4 border-yellow-400/60 animate-ping"
+                style={{
+                  left: `${highlight.x * 100}%`,
+                  top: `${highlight.y * 100}%`,
+                  width: `${highlight.size * 200}%`,
+                  paddingBottom: `${highlight.size * 200}%`,
+                  transform: 'translate(-50%, -50%)',
+                }}
+              />
+              {/* Main highlight circle */}
+              <div
+                className="absolute rounded-full border-4 border-yellow-400 shadow-lg animate-pulse"
+                style={{
+                  left: `${highlight.x * 100}%`,
+                  top: `${highlight.y * 100}%`,
+                  width: `${highlight.size * 200}%`,
+                  paddingBottom: `${highlight.size * 200}%`,
+                  transform: 'translate(-50%, -50%)',
+                  boxShadow: '0 0 30px rgba(250, 204, 21, 0.9), inset 0 0 20px rgba(250, 204, 21, 0.3)',
+                }}
+              />
+            </div>
+          )}
+
           {/* Listening Indicator */}
           {listening && (
             <div className="absolute bottom-6 right-6 z-30 flex h-16 w-16 items-center justify-center pointer-events-none">

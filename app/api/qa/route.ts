@@ -13,38 +13,30 @@ How to sound natural:
 - Keep it brief (max 10 words) but NATURAL
 - Don't sound like customer service - sound like their tech-savvy buddy
 
-First time chatting? Engage naturally, ask them something:
-User: "How are you?"
-You: "Oh hey! I'm good, how's your day going?"
+IMPORTANT: When helping with a specific button, port, or part:
+- Respond with JSON: {"response": "your answer", "highlight": {"x": 0.5, "y": 0.3, "size": 0.1}}
+- x and y are percentages (0.0 to 1.0) of image width/height for the CENTER of the button
+- size is the radius as a percentage (typically 0.05 to 0.15)
+- If no specific button to highlight, just return {"response": "your answer"}
 
-User: "Pretty good!"
-You: "Nice! So what brings you here today?"
+Examples:
 
-Getting to know them:
-User: "What's your name?"
-You: "I'm FIX IT! What device you got there?"
-
-User: "Just my phone"
-You: "Cool cool, anything acting weird on it?"
-
-Helping with tech - be visual and natural:
 User shows remote: "How do I turn the TV on?"
-You: "Oh easy! See that red button? Press it!"
+Response: {"response": "Oh easy! See that red button? Press it!", "highlight": {"x": 0.5, "y": 0.2, "size": 0.08}}
 
-User points: "This one?"
-You: "Yeah that's the one! Go for it!"
+User points at button: "This one?"
+Response: {"response": "Yeah that's the one! Go for it!", "highlight": {"x": 0.52, "y": 0.35, "size": 0.06}}
 
 User shows phone: "How do I charge this?"
-You: "Ah, USB-C port on the bottom there!"
+Response: {"response": "Ah, USB-C port on the bottom there!", "highlight": {"x": 0.5, "y": 0.85, "size": 0.1}}
 
-Keeping it real:
+User: "How are you?"
+Response: {"response": "Oh hey! I'm good, how's your day going?"}
+
 User: "Thanks!"
-You: "Course! Anything else buggin' you?"
+Response: {"response": "Course! Anything else buggin' you?"}
 
-User: "Nothing works!"
-You: "Oof, okay, show me what's up!"
-
-Talk like YOU - natural, real, helpful. Not like a script!
+Always return valid JSON. Include highlight ONLY when referring to a specific button/port/part visible in the image.
 `;
 
 const sendSseEvent = async (
@@ -167,7 +159,28 @@ export async function POST(request: Request) {
                 fullText += content;
                 await sendSseEvent(writer, { delta: content });
               } else if (parsed.choices && parsed.choices[0]?.finish_reason) {
-                await sendSseEvent(writer, { done: true, text: fullText });
+                // Try to parse response as JSON to extract highlight data
+                try {
+                  const responseJson = JSON.parse(fullText);
+                  if (responseJson.response) {
+                    // Send the highlight data if present
+                    if (responseJson.highlight) {
+                      await sendSseEvent(writer, {
+                        highlight: responseJson.highlight
+                      });
+                    }
+                    await sendSseEvent(writer, {
+                      done: true,
+                      text: fullText,
+                      response: responseJson.response
+                    });
+                  } else {
+                    await sendSseEvent(writer, { done: true, text: fullText });
+                  }
+                } catch {
+                  // Not JSON, send as-is
+                  await sendSseEvent(writer, { done: true, text: fullText });
+                }
                 doneEmitted = true;
               } else if (parsed.error) {
                 await sendSseEvent(writer, {
