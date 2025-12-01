@@ -377,9 +377,28 @@ export default function Home() {
       setListening(false);
       isStartingRecognitionRef.current = false;
 
-      // Only restart on specific errors, not network/aborted/no-speech
       const error = event.error;
-      if (error !== 'network' && error !== 'aborted' && error !== 'no-speech') {
+
+      // Don't restart on aborted (we manually stopped it)
+      if (error === 'aborted') {
+        return;
+      }
+
+      // Restart on network errors (transient) and other errors after a delay
+      // Don't spam restarts on no-speech
+      if (error === 'no-speech') {
+        // No speech detected, just restart quietly
+        setTimeout(() => {
+          startListening();
+        }, 500);
+      } else if (error === 'network') {
+        // Network errors are usually transient, restart after short delay
+        console.log("🔄 Network error, restarting speech recognition...");
+        setTimeout(() => {
+          startListening();
+        }, 1500);
+      } else {
+        // Other errors, restart with longer delay
         setTimeout(() => {
           startListening();
         }, 2000);
