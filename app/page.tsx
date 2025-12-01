@@ -77,6 +77,12 @@ export default function Home() {
   const [micReady, setMicReady] = useState(false);
   const [audioUnlocked, setAudioUnlocked] = useState(false);
   const [needsAudioUnlock, setNeedsAudioUnlock] = useState(true);
+  const [showInstructionOverlay, setShowInstructionOverlay] = useState(false);
+  const [instructionText, setInstructionText] = useState("");
+  const [highlightPosition, setHighlightPosition] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
 
   const recordAction = useCallback(
     (message: string) => {
@@ -84,6 +90,60 @@ export default function Home() {
     },
     [setRecentActions]
   );
+
+  const determineHighlightPosition = useCallback((question: string, response: string) => {
+    const lowerQuestion = question.toLowerCase();
+    const lowerResponse = response.toLowerCase();
+
+    // Detect what part of the device is being discussed
+    if (
+      lowerQuestion.includes("turn on") ||
+      lowerQuestion.includes("power") ||
+      lowerQuestion.includes("wake") ||
+      lowerResponse.includes("power button") ||
+      lowerResponse.includes("side button") ||
+      lowerResponse.includes("right side")
+    ) {
+      // Power button - typically right side, middle-ish
+      return { x: 85, y: 50 };
+    } else if (
+      lowerQuestion.includes("charge") ||
+      lowerQuestion.includes("charging") ||
+      lowerQuestion.includes("cable") ||
+      lowerQuestion.includes("port") ||
+      lowerResponse.includes("bottom") ||
+      lowerResponse.includes("charging port") ||
+      lowerResponse.includes("lightning") ||
+      lowerResponse.includes("usb-c")
+    ) {
+      // Charging port - bottom center
+      return { x: 50, y: 95 };
+    } else if (
+      lowerQuestion.includes("volume") ||
+      lowerResponse.includes("volume button") ||
+      lowerResponse.includes("left side")
+    ) {
+      // Volume buttons - left side
+      return { x: 15, y: 40 };
+    } else if (
+      lowerQuestion.includes("camera") ||
+      lowerResponse.includes("camera")
+    ) {
+      // Camera - top back
+      return { x: 20, y: 15 };
+    } else if (
+      lowerQuestion.includes("screen") ||
+      lowerQuestion.includes("display") ||
+      lowerResponse.includes("screen") ||
+      lowerResponse.includes("display")
+    ) {
+      // Screen - center
+      return { x: 50, y: 50 };
+    }
+
+    // Default - no specific highlight
+    return null;
+  }, []);
 
   const playVoiceLine = useCallback(
     async (line: string) => {
@@ -287,6 +347,20 @@ export default function Home() {
 
         setLastSpoken(aggregated);
         setCooldownUntil(performance.now() + 2000);
+
+        // Show instruction overlay with highlight
+        if (aggregated.trim()) {
+          setInstructionText(aggregated);
+          const position = determineHighlightPosition(transcript, aggregated);
+          setHighlightPosition(position);
+          setShowInstructionOverlay(true);
+
+          // Auto-hide after 8 seconds
+          setTimeout(() => {
+            setShowInstructionOverlay(false);
+            setHighlightPosition(null);
+          }, 8000);
+        }
       } catch (err) {
         console.error(err);
         setStatus("Something went wrong with the question.");
@@ -309,7 +383,7 @@ export default function Home() {
 
     recognitionRef.current = recognition;
     recognition.start();
-  }, [recognizedDevice, deviceLabel, listening, recordAction, enqueueSpeech]);
+  }, [recognizedDevice, deviceLabel, listening, recordAction, enqueueSpeech, determineHighlightPosition]);
 
   useEffect(() => {
     const startCamera = async () => {
@@ -563,6 +637,35 @@ export default function Home() {
             muted
             playsInline
           />
+          {/* Highlight circle overlay */}
+          {highlightPosition && (
+            <div
+              className="absolute z-20 pointer-events-none"
+              style={{
+                left: `${highlightPosition.x}%`,
+                top: `${highlightPosition.y}%`,
+                transform: "translate(-50%, -50%)",
+              }}
+            >
+              <div className="relative w-24 h-24">
+                {/* Pulsing yellow circle */}
+                <div className="absolute inset-0 rounded-full border-4 border-yellow-400 animate-ping opacity-75" />
+                <div className="absolute inset-0 rounded-full border-4 border-yellow-400" />
+                {/* Inner glow */}
+                <div className="absolute inset-2 rounded-full bg-yellow-400/20" />
+              </div>
+            </div>
+          )}
+
+          {/* Instruction overlay box */}
+          {showInstructionOverlay && instructionText && (
+            <div className="pointer-events-none absolute bottom-24 left-1/2 z-30 w-[85%] max-w-md -translate-x-1/2 rounded-2xl border-2 border-yellow-400 bg-black/90 px-5 py-4 text-center shadow-2xl backdrop-blur">
+              <p className="text-base font-medium leading-relaxed text-white">
+                {instructionText}
+              </p>
+            </div>
+          )}
+
           <button
             type="button"
             aria-label="Start voice question"
