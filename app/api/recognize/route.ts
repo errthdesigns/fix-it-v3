@@ -29,6 +29,8 @@ const hashImageData = (imageData: string) => {
 };
 
 const parseResult = (parsed: Record<string, unknown>): RecognitionPayload => {
+  // Default to true unless explicitly set to false
+  const isDevice = parsed?.is_device !== false;
   const category =
     typeof parsed?.category === "string" && parsed.category.trim().length > 0
       ? parsed.category.trim()
@@ -50,12 +52,20 @@ const parseResult = (parsed: Record<string, unknown>): RecognitionPayload => {
       ? (parsed.product_name as string).trim()
       : category.slice(0, 40).trim();
 
+  // Device is found if is_device is not explicitly false and we have valid data
+  const deviceFound = isDevice &&
+    category !== "Not a device" &&
+    category !== "Unknown product" &&
+    description !== "Unable to identify product" &&
+    !description.includes("No device detected") &&
+    !description.includes("point your camera");
+
   return {
     category,
     description,
     highlights: highlights.slice(0, 5),
     shortDescription: shortDescription || "Device detected",
-    deviceFound: description !== "Unable to identify product",
+    deviceFound,
     raw: JSON.stringify(parsed),
   };
 };
@@ -94,39 +104,78 @@ export async function POST(req: NextRequest) {
 
     const openai = new OpenAI({ apiKey });
 
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "text",
-              text: `Analyze this product image. Respond ONLY with valid JSON in this exact format (no markdown, no explanation):
+    let response;
+    try {
+      response = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: `IDENTIFY THE DEVICE IN THIS IMAGE.
+
+Look for ANY technical device - phones, remotes, laptops, tablets, chargers, cables, game consoles, cameras, headphones, appliances, tools, etc.
+
+Be specific when you can identify brand/model, but ALWAYS identify the general device type even if you can't tell the exact model.
+
+EXAMPLES:
+- Phone with visible Apple logo = "iPhone"
+- Phone with Android look = "Android Phone"
+- TV Remote with visible buttons = "TV Remote Control"
+- Laptop with Apple logo = "MacBook"
+- Generic laptop = "Laptop"
+- Cable with USB-C = "USB-C Cable"
+- Any remote = "Remote Control"
+- Any charger = "Phone Charger" or "Laptop Charger"
+
+PRIORITY: Get the device TYPE right (phone, remote, laptop, etc.) - specific model is bonus.
+
+If you see a device, respond:
 {
-  "category": "product type in 2-3 words",
-  "description": "concise description in 15-25 words",
-  "highlights": ["feature 1", "feature 2", "feature 3"]
+  "product_name": "Device type + brand if visible (e.g., 'iPhone', 'Samsung Phone', 'TV Remote Control', 'Xbox Controller')",
+  "category": "general category",
+  "description": "what device and what it looks like",
+  "highlights": ["visible features", "buttons", "ports", "logos"],
+  "is_device": true
 }
-Keep it brief and accurate. Focus on visible features.`,
-            },
-            {
-              type: "image_url",
-              image_url: {
-                url: image,
-                detail: "low",
+
+If NO device (just background, person, etc.):
+{
+  "product_name": "No device detected",
+  "category": "Not a device",
+  "description": "Point camera at your device",
+  "highlights": [],
+  "is_device": false
+}
+
+JSON only, no markdown. Prioritize FINDING devices over being specific.`,
               },
-            },
-          ],
-        },
-      ],
-      max_tokens: 200,
-      temperature: 0.3,
-    });
+              {
+                type: "image_url",
+                image_url: {
+                  url: image,
+                  detail: "high",
+                },
+              },
+            ],
+          },
+        ],
+        max_tokens: 250,
+        temperature: 0.3,
+      });
+    } catch (apiError) {
+      console.error("OpenAI API error:", apiError);
+      throw new Error(
+        `OpenAI API call failed: ${apiError instanceof Error ? apiError.message : "Unknown error"}`
+      );
+    }
 
     const content = response.choices[0]?.message?.content as CompletionContent;
     if (!content) {
-      throw new Error("OpenAI returned an empty response.");
+      console.error("OpenAI response:", JSON.stringify(response, null, 2));
+      throw new Error("OpenAI returned an empty response. Check server logs for details.");
     }
 
     let serialized = "";
@@ -148,11 +197,14 @@ Keep it brief and accurate. Focus on visible features.`,
     }
 
     const cleaned = serialized.replace(/```json\s*/gi, "").replace(/```\s*/g, "").trim();
+    console.log("OpenAI vision response:", cleaned);
 
     let normalized: RecognitionPayload;
     try {
       const parsed = JSON.parse(cleaned);
+      console.log("Parsed JSON:", parsed);
       normalized = parseResult(parsed as Record<string, unknown>);
+      console.log("Normalized result - deviceFound:", normalized.deviceFound);
     } catch (parseError) {
       console.warn("Vision parse fallback:", parseError);
       normalized = fallbackResult(cleaned);

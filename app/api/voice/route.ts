@@ -43,12 +43,12 @@ export async function POST(req: NextRequest) {
         },
         body: JSON.stringify({
           text,
-          model_id: "eleven_turbo_v2",
+          model_id: "eleven_turbo_v2_5",
           voice_settings: {
-            stability: 0.5,
+            stability: 0.3,
             similarity_boost: 0.75,
-            style: 0.0,
-            use_speaker_boost: false,
+            style: 0.7,
+            use_speaker_boost: true,
           },
           optimize_streaming_latency: 4,
         }),

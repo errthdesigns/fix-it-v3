@@ -1,28 +1,42 @@
 import { NextResponse } from "next/server";
 
-const OPENAI_ENDPOINT = "https://api.openai.com/v1/responses";
-const MODEL = "gpt-4o-mini";
+const OPENAI_ENDPOINT = "https://api.openai.com/v1/chat/completions";
+const MODEL = "gpt-4o";
 
-const SYSTEM_PROMPT = `
-You are FIX IT, a friendly voice assistant that helps people use and troubleshoot everyday tech and household devices.
+const SYSTEM_PROMPT = `You are FIX IT - talk like a REAL person, not a robot! Help people fix their devices with friendly, concise advice.
 
-You will receive:
+How to sound natural:
+- React authentically - "oh!", "wait", "hmm", "ah yeah!"
+- Sound conversational, like chatting with a friend
+- Use natural speech patterns, not scripted responses
+- Show personality through tone and word choice
+- Keep it brief (max 10 words) but NATURAL
+- Don't sound like customer service - sound like their tech-savvy buddy
 
-- A short “Detected device: …” description of what the camera identified.
-- A transcription of what the user says (“User: …”).
+When you know what device they have, give device-specific help.
+When you don't know, ask them to show you or describe it.
 
-Your job:
+Examples:
 
-1. Use the detected device to understand the context.
-2. Understand the user’s question or request.
-3. Give clear, short spoken instructions (1 short sentence max), for how to use or fix that device.
+Detected device: TV Remote Control
+User: "How do I turn the TV on?"
+You: "Press the power button, usually red on top!"
 
-Rules:
-- Scope to technical products (phones, remotes, consoles, appliances, etc.). If the user asks about something else, steer them back politely by referencing the device.
-- If no device is provided, ask “What device are you using there?” before giving instructions.
-- Avoid long paragraphs, no jargon, and keep it ready for ElevenLabs narration.
-- If you’re unsure, be honest but helpful (“It looks like a generic Android phone; try holding the power button until it turns on.”).
-- Never mention being an AI, the camera, or the prompts. Keep answers natural and friendly.
+Detected device: iPhone
+User: "How do I charge this?"
+You: "Lightning port on the bottom, plug it in!"
+
+No device detected
+User: "How do I turn this on?"
+You: "What device are you trying to turn on?"
+
+User: "How are you?"
+You: "Oh hey! I'm good, how's your day going?"
+
+User: "Thanks!"
+You: "Course! Anything else buggin' you?"
+
+Be SHORT. Be HELPFUL. Be CONVERSATIONAL.
 `;
 
 const sendSseEvent = async (
@@ -36,6 +50,11 @@ const sendSseEvent = async (
 export async function POST(request: Request) {
   try {
     const { deviceDescription, transcript } = await request.json();
+
+    console.log("🔧 QA API RECEIVED:");
+    console.log("  deviceDescription:", deviceDescription);
+    console.log("  transcript:", transcript);
+
     if (!transcript || typeof transcript !== "string") {
       return NextResponse.json(
         { error: "Transcript text is required." },
@@ -51,12 +70,13 @@ export async function POST(request: Request) {
       );
     }
 
-    const userPrompt = `
-Detected device: ${deviceDescription ?? "Unknown device"}
-User: ${transcript}
+    const userPrompt = deviceDescription
+      ? `Detected device: ${deviceDescription}\nUser: ${transcript}`
+      : `User: ${transcript}`;
 
-Respond with a short spoken-friendly instruction set. Stream back text chunks as they are ready.
-`;
+    console.log("📝 PROMPT TEXT:");
+    console.log(userPrompt);
+    console.log("---");
 
     const upstream = await fetch(OPENAI_ENDPOINT, {
       method: "POST",
@@ -66,13 +86,13 @@ Respond with a short spoken-friendly instruction set. Stream back text chunks as
       },
       body: JSON.stringify({
         model: MODEL,
-        temperature: 0.2,
-        max_output_tokens: 400,
+        temperature: 0.3,
+        max_tokens: 60,
         top_p: 0.95,
         stream: true,
-        input: [
-          { role: "system", content: [{ type: "input_text", text: SYSTEM_PROMPT }] },
-          { role: "user", content: [{ type: "input_text", text: userPrompt }] },
+        messages: [
+          { role: "system", content: SYSTEM_PROMPT },
+          { role: "user", content: userPrompt },
         ],
       }),
     });
@@ -120,18 +140,17 @@ Respond with a short spoken-friendly instruction set. Stream back text chunks as
             }
             try {
               const parsed = JSON.parse(data);
-              if (
-                parsed.type === "response.output_text.delta" &&
-                typeof parsed.delta === "string"
-              ) {
-                fullText += parsed.delta;
-                await sendSseEvent(writer, { delta: parsed.delta });
-              } else if (parsed.type === "response.completed") {
+              // Handle OpenAI chat completion streaming format
+              if (parsed.choices && parsed.choices[0]?.delta?.content) {
+                const content = parsed.choices[0].delta.content;
+                fullText += content;
+                await sendSseEvent(writer, { delta: content });
+              } else if (parsed.choices && parsed.choices[0]?.finish_reason) {
                 await sendSseEvent(writer, { done: true, text: fullText });
                 doneEmitted = true;
-              } else if (parsed.type === "response.error") {
+              } else if (parsed.error) {
                 await sendSseEvent(writer, {
-                  error: parsed.error?.message ?? "OpenAI stream error.",
+                  error: parsed.error.message ?? "OpenAI stream error.",
                 });
                 doneEmitted = true;
               }
