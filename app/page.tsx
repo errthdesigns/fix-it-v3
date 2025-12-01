@@ -693,7 +693,7 @@ export default function Home() {
             <div className="absolute inset-0 pointer-events-none z-20">
               {/* Outer pulsing ring */}
               <div
-                className="absolute rounded-full border-4 border-yellow-400/60 animate-ping"
+                className="absolute rounded-full border-[3px] border-white/70 animate-ping"
                 style={{
                   left: `${highlight.x * 100}%`,
                   top: `${highlight.y * 100}%`,
@@ -704,14 +704,14 @@ export default function Home() {
               />
               {/* Main highlight circle */}
               <div
-                className="absolute rounded-full border-4 border-yellow-400 shadow-lg animate-pulse"
+                className="absolute rounded-full border-[3px] border-white shadow-2xl animate-pulse"
                 style={{
                   left: `${highlight.x * 100}%`,
                   top: `${highlight.y * 100}%`,
                   width: `${highlight.size * 100}vw`,
                   height: `${highlight.size * 100}vw`,
                   transform: 'translate(-50%, -50%)',
-                  boxShadow: '0 0 30px rgba(250, 204, 21, 0.9), inset 0 0 20px rgba(250, 204, 21, 0.3)',
+                  boxShadow: '0 0 25px rgba(255, 255, 255, 0.9), 0 0 50px rgba(255, 255, 255, 0.5), inset 0 0 15px rgba(255, 255, 255, 0.3)',
                 }}
               />
             </div>
