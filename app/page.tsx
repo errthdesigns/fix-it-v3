@@ -673,9 +673,6 @@ export default function Home() {
     [captureFrame, recordAction, cameraReady, isAnalyzing, cooldownUntil, lastSpoken, listening]
   );
 
-  // Device scanning DISABLED to avoid OpenAI quota errors
-  // To re-enable: Add credits to OpenAI, then uncomment below
-  /*
   useEffect(() => {
     // Passive background scanning every 20 seconds (optimized for mobile)
     // Skip scanning during active conversation to reduce lag
@@ -690,7 +687,7 @@ export default function Home() {
     return () => {
       clearInterval(scanInterval);
     };
-  }, [cameraReady, handleScan, isAnalyzing, audioUnlocked]);
+  }, [cameraReady, handleScan, isAnalyzing, audioUnlocked, listening]);
 
   useEffect(() => {
     // Do one initial scan after camera is ready
@@ -700,7 +697,6 @@ export default function Home() {
       }, 2000);
     }
   }, [cameraReady, audioUnlocked, handleScan]);
-  */
 
   return (
     <main className="relative h-screen w-full bg-slate-950">
