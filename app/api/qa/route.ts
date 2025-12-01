@@ -105,7 +105,7 @@ export async function POST(request: Request) {
       body: JSON.stringify({
         model: MODEL,
         temperature: 0.3,
-        max_tokens: 80,
+        max_tokens: 60,
         top_p: 0.95,
         stream: true,
         messages: [

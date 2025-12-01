@@ -76,6 +76,7 @@ export default function Home() {
   const [lastSpoken, setLastSpoken] = useState<string>("");
   const [displayResponse, setDisplayResponse] = useState<string>("");
   const [highlight, setHighlight] = useState<{x: number, y: number, size: number} | null>(null);
+  const highlightTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const hasGreetedRef = useRef(false);
   const [audioUnlocked, setAudioUnlocked] = useState(false);
   const [needsAudioUnlock, setNeedsAudioUnlock] = useState(true);
@@ -219,7 +220,7 @@ export default function Home() {
         console.log("  Device:", deviceLabelRef.current || "null");
         console.log("  Question:", transcript);
 
-        // Capture current camera frame for visual context
+        // Capture current camera frame for visual context (lower quality for speed)
         const currentFrame = captureFrame();
 
         const qaResponse = await fetch("/api/qa", {
@@ -289,9 +290,16 @@ export default function Home() {
               // Handle highlight coordinates
               if (payload.highlight) {
                 console.log("🎯 Highlight received:", payload.highlight);
+                // Clear any existing timeout
+                if (highlightTimeoutRef.current) {
+                  clearTimeout(highlightTimeoutRef.current);
+                }
                 setHighlight(payload.highlight);
-                // Auto-clear highlight after 8 seconds
-                setTimeout(() => setHighlight(null), 8000);
+                // Auto-clear highlight after 5 seconds
+                highlightTimeoutRef.current = setTimeout(() => {
+                  setHighlight(null);
+                  highlightTimeoutRef.current = null;
+                }, 5000);
               }
 
               if (typeof payload.delta === "string") {
@@ -360,6 +368,10 @@ export default function Home() {
       isStartingRecognitionRef.current = false;
       // Clear the display and highlight when user starts talking
       setDisplayResponse("");
+      if (highlightTimeoutRef.current) {
+        clearTimeout(highlightTimeoutRef.current);
+        highlightTimeoutRef.current = null;
+      }
       setHighlight(null);
       // If AI is speaking when user starts talking, interrupt it
       if (isSpeakingRef.current && audioRef.current) {
@@ -666,15 +678,15 @@ export default function Home() {
   );
 
   useEffect(() => {
-    // Passive background scanning every 15 seconds (optimized for mobile)
-    // Scans quietly without blocking conversation
+    // Passive background scanning every 20 seconds (optimized for mobile)
+    // Skip scanning during active conversation to reduce lag
     const scanInterval = setInterval(() => {
       if (!cameraReady || !audioUnlocked) return;
-      // Scan passively in background - don't block if already analyzing
-      if (!isAnalyzing) {
+      // Don't scan if analyzing, listening, or speaking (reduces mobile lag)
+      if (!isAnalyzing && !listening && !isSpeakingRef.current) {
         handleScan();
       }
-    }, 15000);
+    }, 20000);
 
     return () => {
       clearInterval(scanInterval);
