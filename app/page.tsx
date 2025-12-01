@@ -94,6 +94,7 @@ export default function Home() {
     async (line: string) => {
       const trimmed = line.trim();
       if (!trimmed) return;
+      console.log("🔊 Playing voice:", trimmed);
       try {
         isSpeakingRef.current = true;
         const voiceResponse = await fetch("/api/voice", {
@@ -189,8 +190,11 @@ export default function Home() {
       const result = event.results[event.results.length - 1];
       const interim = result[0]?.transcript?.trim() ?? "";
 
+      console.log("🎙️ Speech result:", { interim, isFinal: result.isFinal });
+
       // If user starts speaking while AI is talking, stop the AI immediately
       if (isSpeakingRef.current && audioRef.current && !audioRef.current.paused) {
+        console.log("🔇 Interrupting AI speech");
         audioRef.current.pause();
         audioRef.current.currentTime = 0;
         isSpeakingRef.current = false;
@@ -209,6 +213,11 @@ export default function Home() {
       }
       lastTranscriptRef.current = transcript;
       console.log("✅ Processing user question:", transcript);
+      console.log("📊 State:", {
+        listening,
+        isSpeaking: isSpeakingRef.current,
+        deviceLabel: deviceLabelRef.current,
+      });
 
       // STOP LISTENING while processing
       recognitionRef.current?.stop();
@@ -221,12 +230,18 @@ export default function Home() {
         console.log("  Question:", transcript);
 
         // Capture current camera frame for visual context (lower quality for speed)
+        console.log("📸 Capturing frame...");
         const currentFrame = captureFrame();
+        console.log("📸 Frame captured, size:", currentFrame ? `${currentFrame.length} chars` : "null");
 
         // Add timeout to prevent hanging on slow WiFi
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+        const timeoutId = setTimeout(() => {
+          console.log("⏱️ Request timeout after 15 seconds");
+          controller.abort();
+        }, 15000); // 15 second timeout
 
+        console.log("🌐 Fetching QA API...");
         const qaResponse = await fetch("/api/qa", {
           method: "POST",
           headers: {
@@ -240,6 +255,8 @@ export default function Home() {
           signal: controller.signal,
         }).finally(() => clearTimeout(timeoutId));
 
+        console.log("✅ QA API responded:", qaResponse.status, qaResponse.statusText);
+
         if (!qaResponse.ok || !qaResponse.body) {
           const qaError = await qaResponse
             .json()
@@ -252,6 +269,7 @@ export default function Home() {
           throw new Error(qaError.error ?? `QA request failed with status ${qaResponse.status}`);
         }
 
+        console.log("📡 Starting to read streaming response...");
         const reader = qaResponse.body.getReader();
         const decoder = new TextDecoder();
         let buffer = "";
@@ -318,6 +336,7 @@ export default function Home() {
                 // Don't flush sentences yet - wait for full response to parse JSON
               }
               if (payload.done || payload.text) {
+                console.log("🏁 Response complete, aggregated:", aggregated.slice(0, 100));
                 doneSignal = true;
 
                 // Try to parse as JSON to extract response text
