@@ -201,11 +201,13 @@ export default function Home() {
         return;
       }
       const transcript = interim;
+      console.log("🎤 Speech detected (final):", transcript);
       if (!transcript || transcript === lastTranscriptRef.current) {
+        console.log("⚠️ Skipping - empty or duplicate transcript");
         return;
       }
       lastTranscriptRef.current = transcript;
-      console.log("User question:", transcript);
+      console.log("✅ Processing user question:", transcript);
 
       // STOP LISTENING while processing
       recognitionRef.current?.stop();
@@ -543,7 +545,7 @@ export default function Home() {
       return null;
     }
 
-    const targetWidth = 640;
+    const targetWidth = 480; // Reduced for mobile performance
     const aspect =
       video.videoWidth && video.videoHeight
         ? video.videoHeight / video.videoWidth
@@ -555,7 +557,7 @@ export default function Home() {
     if (!context) return null;
 
     context.drawImage(video, 0, 0, targetWidth, targetHeight);
-    const snapshot = canvas.toDataURL("image/webp", 0.65);
+    const snapshot = canvas.toDataURL("image/webp", 0.5); // Lower quality for mobile
     recordAction("Frame captured");
     return snapshot;
   }, [recordAction]);
@@ -664,7 +666,7 @@ export default function Home() {
   );
 
   useEffect(() => {
-    // Passive background scanning every 8 seconds (less aggressive)
+    // Passive background scanning every 15 seconds (optimized for mobile)
     // Scans quietly without blocking conversation
     const scanInterval = setInterval(() => {
       if (!cameraReady || !audioUnlocked) return;
@@ -672,7 +674,7 @@ export default function Home() {
       if (!isAnalyzing) {
         handleScan();
       }
-    }, 8000);
+    }, 15000);
 
     return () => {
       clearInterval(scanInterval);
@@ -716,8 +718,8 @@ export default function Home() {
                 style={{
                   left: `${highlight.x * 100}%`,
                   top: `${highlight.y * 100}%`,
-                  width: `${highlight.size * 100}vw`,
-                  height: `${highlight.size * 100}vw`,
+                  width: `min(${highlight.size * 100}vw, ${highlight.size * 100}vh)`,
+                  height: `min(${highlight.size * 100}vw, ${highlight.size * 100}vh)`,
                   transform: 'translate(-50%, -50%)',
                 }}
               />
@@ -727,8 +729,8 @@ export default function Home() {
                 style={{
                   left: `${highlight.x * 100}%`,
                   top: `${highlight.y * 100}%`,
-                  width: `${highlight.size * 100}vw`,
-                  height: `${highlight.size * 100}vw`,
+                  width: `min(${highlight.size * 100}vw, ${highlight.size * 100}vh)`,
+                  height: `min(${highlight.size * 100}vw, ${highlight.size * 100}vh)`,
                   transform: 'translate(-50%, -50%)',
                   boxShadow: '0 0 25px rgba(255, 255, 255, 0.9), 0 0 50px rgba(255, 255, 255, 0.5), inset 0 0 15px rgba(255, 255, 255, 0.3)',
                 }}
