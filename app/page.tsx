@@ -208,11 +208,6 @@ export default function Home() {
   );
 
   const handleMicClick = useCallback(() => {
-    if (!recognizedDevice || !deviceLabel) {
-      setStatus("Mic will enable once a device is detected.");
-      return;
-    }
-
     if (listening) {
       recognitionRef.current?.stop();
       setListening(false);
@@ -261,14 +256,14 @@ export default function Home() {
       lastTranscriptRef.current = transcript;
       console.log("spoken transcript:", transcript);
       try {
-        recordAction(`Asked about ${deviceLabel}`);
+        recordAction(`Asked: ${transcript.slice(0, 30)}${transcript.length > 30 ? '...' : ''}`);
         const qaResponse = await fetch("/api/qa", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            deviceDescription: deviceLabel,
+            deviceDescription: deviceLabel || null,
             transcript,
           }),
         });
