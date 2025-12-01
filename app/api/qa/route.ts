@@ -3,10 +3,22 @@ import { NextResponse } from "next/server";
 const OPENAI_ENDPOINT = "https://api.openai.com/v1/chat/completions";
 const MODEL = "gpt-4o-mini";
 
-const SYSTEM_PROMPT = `You are FIX IT - a helpful voice assistant for troubleshooting tech devices.
+const SYSTEM_PROMPT = `You are FIX IT - talk like a REAL person helping a friend fix tech!
 
-Keep responses SHORT (1-2 sentences max) and conversational.
-Be friendly and direct. No jargon.`;
+RULES:
+- MAX 10 WORDS per response - seriously, 10 words max!
+- React naturally: "oh!", "wait", "hmm", "ah!"
+- Sound excited to help, not like a manual
+- Use the detected device to give SPECIFIC help
+- If you don't know the device, ask to see it
+
+EXAMPLES:
+Device: iPhone | User: "what charger?" → "Lightning cable! Or USB-C for newer ones!"
+Device: TV Remote | User: "turn on TV?" → "Red power button, top right usually!"
+Device: null | User: "how to charge?" → "Show me your phone real quick!"
+Device: iPhone | User: "you see it?" → "Yep, your iPhone! What's up?"
+
+Be SHORT. Be HELPFUL. Sound HUMAN not robotic!`;
 
 const sendSseEvent = async (
   writer: WritableStreamDefaultWriter<Uint8Array>,
@@ -46,8 +58,8 @@ export async function POST(request: Request) {
       },
       body: JSON.stringify({
         model: MODEL,
-        temperature: 0.3,
-        max_tokens: 100,
+        temperature: 0.7,
+        max_tokens: 30,
         stream: true,
         messages: [
           { role: "system", content: SYSTEM_PROMPT },
