@@ -223,6 +223,10 @@ export default function Home() {
         // Capture current camera frame for visual context (lower quality for speed)
         const currentFrame = captureFrame();
 
+        // Add timeout to prevent hanging on slow WiFi
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+
         const qaResponse = await fetch("/api/qa", {
           method: "POST",
           headers: {
@@ -233,13 +237,19 @@ export default function Home() {
             transcript,
             image: currentFrame,
           }),
-        });
+          signal: controller.signal,
+        }).finally(() => clearTimeout(timeoutId));
 
         if (!qaResponse.ok || !qaResponse.body) {
           const qaError = await qaResponse
             .json()
             .catch(() => ({ error: "QA request failed." }));
-          throw new Error(qaError.error ?? "QA request failed.");
+          console.error("❌ QA Response Error:", {
+            status: qaResponse.status,
+            statusText: qaResponse.statusText,
+            error: qaError
+          });
+          throw new Error(qaError.error ?? `QA request failed with status ${qaResponse.status}`);
         }
 
         const reader = qaResponse.body.getReader();
@@ -356,8 +366,22 @@ export default function Home() {
         }, 500);
 
       } catch (err) {
-        console.error(err);
-        setStatus("Something went wrong. Try again.");
+        console.error("❌ QA Request Error:", err);
+        const errorMessage = err instanceof Error ? err.message : "Unknown error";
+        console.error("Error details:", errorMessage);
+
+        // Show specific error to user
+        if (errorMessage.includes("network") || errorMessage.includes("fetch")) {
+          setStatus("Network error. Check your connection and try again.");
+          setDisplayResponse("Network error. Check your connection.");
+        } else if (errorMessage.includes("timeout")) {
+          setStatus("Request timed out. Try again.");
+          setDisplayResponse("Request timed out.");
+        } else {
+          setStatus("Something went wrong. Try again.");
+          setDisplayResponse("Error occurred.");
+        }
+
         setTimeout(() => {
           startListening();
         }, 2000);
@@ -557,7 +581,7 @@ export default function Home() {
       return null;
     }
 
-    const targetWidth = 480; // Reduced for mobile performance
+    const targetWidth = 400; // Further reduced for slow networks
     const aspect =
       video.videoWidth && video.videoHeight
         ? video.videoHeight / video.videoWidth
@@ -569,7 +593,7 @@ export default function Home() {
     if (!context) return null;
 
     context.drawImage(video, 0, 0, targetWidth, targetHeight);
-    const snapshot = canvas.toDataURL("image/webp", 0.5); // Lower quality for mobile
+    const snapshot = canvas.toDataURL("image/webp", 0.4); // Lower quality for slow networks
     recordAction("Frame captured");
     return snapshot;
   }, [recordAction]);
