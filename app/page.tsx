@@ -286,6 +286,7 @@ export default function Home() {
 
               // Handle highlight coordinates
               if (payload.highlight) {
+                console.log("🎯 Highlight received:", payload.highlight);
                 setHighlight(payload.highlight);
                 // Auto-clear highlight after 8 seconds
                 setTimeout(() => setHighlight(null), 8000);
@@ -294,8 +295,7 @@ export default function Home() {
               if (typeof payload.delta === "string") {
                 aggregated += payload.delta;
                 setStatus(aggregated);
-                // Don't update display yet - wait for parsed response
-                flushSentences();
+                // Don't flush sentences yet - wait for full response to parse JSON
               }
               if (payload.done || payload.text) {
                 doneSignal = true;
@@ -304,20 +304,25 @@ export default function Home() {
                 let finalText = aggregated;
                 try {
                   const parsed = JSON.parse(aggregated);
+                  console.log("📝 Parsed LLM response:", parsed);
                   if (parsed.response) {
                     finalText = parsed.response;
                     setDisplayResponse(parsed.response);
                     setStatus(parsed.response);
-                    // Update aggregated for voice synthesis
+                    // Update aggregated for voice synthesis - THIS IS KEY
                     aggregated = parsed.response;
+                    consumedLength = 0; // Reset for flushing the actual response
+                    console.log("✅ Speaking only:", parsed.response);
                   } else {
                     setDisplayResponse(aggregated);
                   }
-                } catch {
+                } catch (parseErr) {
                   // Not JSON, use as-is
+                  console.log("⚠️ Response not JSON, using as-is:", aggregated.slice(0, 100));
                   setDisplayResponse(aggregated);
                 }
 
+                // NOW flush sentences with the parsed response text
                 flushSentences(true);
               }
             } catch (err) {
@@ -692,8 +697,8 @@ export default function Home() {
                 style={{
                   left: `${highlight.x * 100}%`,
                   top: `${highlight.y * 100}%`,
-                  width: `${highlight.size * 200}%`,
-                  paddingBottom: `${highlight.size * 200}%`,
+                  width: `${highlight.size * 100}vw`,
+                  height: `${highlight.size * 100}vw`,
                   transform: 'translate(-50%, -50%)',
                 }}
               />
@@ -703,8 +708,8 @@ export default function Home() {
                 style={{
                   left: `${highlight.x * 100}%`,
                   top: `${highlight.y * 100}%`,
-                  width: `${highlight.size * 200}%`,
-                  paddingBottom: `${highlight.size * 200}%`,
+                  width: `${highlight.size * 100}vw`,
+                  height: `${highlight.size * 100}vw`,
                   transform: 'translate(-50%, -50%)',
                   boxShadow: '0 0 30px rgba(250, 204, 21, 0.9), inset 0 0 20px rgba(250, 204, 21, 0.3)',
                 }}
