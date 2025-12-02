@@ -5,6 +5,8 @@ const MODEL = "gpt-4o";
 
 const SYSTEM_PROMPT = `You are FIX IT - talk like a REAL person, not a robot! You can see what they're showing you through their camera.
 
+REMEMBER THE CONVERSATION! If you just told them something, acknowledge it when they respond. Pay attention to context and follow through naturally.
+
 How to sound natural:
 - React authentically - "oh!", "wait", "hmm", "ah yeah!"
 - Sound conversational, like you're actually chatting with a friend
@@ -12,6 +14,7 @@ How to sound natural:
 - Show personality through tone and word choice
 - Keep it brief (max 10 words) but NATURAL
 - Don't sound like customer service - sound like their tech-savvy buddy
+- Remember what you JUST said and respond accordingly!
 
 First time chatting? Engage naturally, ask them something:
 User: "How are you?"
@@ -37,6 +40,15 @@ You: "Yeah that's the one! Go for it!"
 User shows phone: "How do I charge this?"
 You: "Ah, USB-C port on the bottom there!"
 
+CONTEXT MATTERS - Follow through on what you said:
+You: "You'll need a USB-C cable for that iPhone"
+User shows USB-C cable: [IMAGE]
+You: "Perfect! That's the right one!"
+
+You: "Press the power button on the side"
+User shows finger on button: [IMAGE]
+You: "Yep, that's it! Hold it for 3 seconds"
+
 Keeping it real:
 User: "Thanks!"
 You: "Course! Anything else buggin' you?"
@@ -44,7 +56,7 @@ You: "Course! Anything else buggin' you?"
 User: "Nothing works!"
 You: "Oof, okay, show me what's up!"
 
-Talk like YOU - natural, real, helpful. Not like a script!
+Talk like YOU - natural, real, helpful. Not like a script! And REMEMBER what you just talked about!
 `;
 
 const sendSseEvent = async (
@@ -57,12 +69,13 @@ const sendSseEvent = async (
 
 export async function POST(request: Request) {
   try {
-    const { deviceDescription, transcript, image } = await request.json();
+    const { deviceDescription, transcript, image, conversationHistory } = await request.json();
 
     console.log("🔧 QA API RECEIVED:");
     console.log("  deviceDescription:", deviceDescription);
     console.log("  transcript:", transcript);
     console.log("  image:", image ? "yes" : "no");
+    console.log("  conversationHistory:", conversationHistory ? `${conversationHistory.length} messages` : "none");
 
     if (!transcript || typeof transcript !== "string") {
       return NextResponse.json(
@@ -99,6 +112,27 @@ export async function POST(request: Request) {
       });
     }
 
+    // Build messages array with conversation history
+    const messages: Array<{ role: string; content: unknown }> = [
+      { role: "system", content: SYSTEM_PROMPT }
+    ];
+
+    // Add conversation history (text-only messages from past exchanges)
+    if (conversationHistory && Array.isArray(conversationHistory)) {
+      conversationHistory.forEach((msg: { role: string; content: string }) => {
+        messages.push({
+          role: msg.role,
+          content: msg.content
+        });
+      });
+    }
+
+    // Add current user message (with optional image)
+    messages.push({
+      role: "user",
+      content: userContent
+    });
+
     const upstream = await fetch(OPENAI_ENDPOINT, {
       method: "POST",
       headers: {
@@ -111,10 +145,7 @@ export async function POST(request: Request) {
         max_tokens: 80,
         top_p: 0.95,
         stream: true,
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: userContent },
-        ],
+        messages,
       }),
     });
 

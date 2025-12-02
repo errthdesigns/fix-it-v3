@@ -80,6 +80,7 @@ export default function Home() {
   const [needsAudioUnlock, setNeedsAudioUnlock] = useState(true);
   const isSpeakingRef = useRef(false);
   const isStartingRecognitionRef = useRef(false);
+  const conversationHistoryRef = useRef<Array<{role: string; content: string}>>([]);
 
   const recordAction = useCallback(
     (message: string) => {
@@ -219,6 +220,11 @@ export default function Home() {
         // Capture current camera frame for visual context
         const currentFrame = captureFrame();
 
+        // Build user message for history
+        const userMessage = deviceLabelRef.current
+          ? `Detected device: ${deviceLabelRef.current}\nUser: ${transcript}`
+          : `User: ${transcript}`;
+
         const qaResponse = await fetch("/api/qa", {
           method: "POST",
           headers: {
@@ -228,6 +234,7 @@ export default function Home() {
             deviceDescription: deviceLabelRef.current || null,
             transcript,
             image: currentFrame,
+            conversationHistory: conversationHistoryRef.current,
           }),
         });
 
@@ -305,6 +312,15 @@ export default function Home() {
         }
 
         setLastSpoken(aggregated);
+
+        // Add to conversation history (keep last 10 exchanges = 20 messages)
+        conversationHistoryRef.current.push(
+          { role: "user", content: userMessage },
+          { role: "assistant", content: aggregated }
+        );
+        if (conversationHistoryRef.current.length > 20) {
+          conversationHistoryRef.current = conversationHistoryRef.current.slice(-20);
+        }
 
         // Wait for speech to finish, then restart listening
         await speechQueueRef.current;
