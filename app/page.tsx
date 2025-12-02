@@ -81,6 +81,7 @@ export default function Home() {
   const isSpeakingRef = useRef(false);
   const isStartingRecognitionRef = useRef(false);
   const conversationHistoryRef = useRef<Array<{role: string; content: string}>>([]);
+  const [isThinking, setIsThinking] = useState(false);
 
   const recordAction = useCallback(
     (message: string) => {
@@ -210,6 +211,7 @@ export default function Home() {
       // STOP LISTENING while processing
       recognitionRef.current?.stop();
       setListening(false);
+      setIsThinking(true);
 
       try {
         recordAction(`Q: ${transcript.slice(0, 30)}`);
@@ -290,6 +292,7 @@ export default function Home() {
                 throw new Error(payload.error);
               }
               if (typeof payload.delta === "string") {
+                setIsThinking(false); // Stop thinking animation on first response
                 aggregated += payload.delta;
                 setStatus(aggregated);
                 setDisplayResponse(aggregated);
@@ -330,6 +333,7 @@ export default function Home() {
 
       } catch (err) {
         console.error(err);
+        setIsThinking(false);
         setStatus("Something went wrong. Try again.");
         setTimeout(() => {
           startListening();
@@ -678,6 +682,24 @@ export default function Home() {
               </div>
             </div>
           )}
+
+          {/* Thinking Animation */}
+          {isThinking && (
+            <div className="absolute inset-0 z-40 flex items-center justify-center pointer-events-none">
+              <div className="relative flex items-center justify-center">
+                {/* Outer pulsing ring */}
+                <div className="absolute h-32 w-32 rounded-full bg-blue-500/20 animate-ping" style={{animationDuration: '2s'}} />
+                {/* Middle pulsing ring */}
+                <div className="absolute h-24 w-24 rounded-full bg-blue-400/30 animate-pulse" style={{animationDuration: '1.5s'}} />
+                {/* Inner orb with gradient */}
+                <div className="relative h-20 w-20 rounded-full bg-gradient-to-br from-blue-400 via-cyan-400 to-blue-500 shadow-2xl shadow-blue-500/50 animate-pulse">
+                  {/* Inner glow */}
+                  <div className="absolute inset-2 rounded-full bg-gradient-to-br from-white/40 to-transparent animate-pulse" style={{animationDuration: '1s'}} />
+                </div>
+              </div>
+            </div>
+          )}
+
           {needsAudioUnlock && !audioUnlocked && (
             <div className="pointer-events-auto absolute bottom-20 left-1/2 z-30 w-[90%] max-w-sm -translate-x-1/2 rounded-2xl border border-white/40 bg-black/85 px-6 py-6 text-center text-white shadow-2xl backdrop-blur">
               <p className="text-sm font-semibold uppercase tracking-[0.45em] text-white/75">
