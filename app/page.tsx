@@ -80,6 +80,8 @@ export default function Home() {
   const [needsAudioUnlock, setNeedsAudioUnlock] = useState(true);
   const isSpeakingRef = useRef(false);
   const isStartingRecognitionRef = useRef(false);
+  const conversationHistoryRef = useRef<Array<{role: string; content: string}>>([]);
+  const [isThinking, setIsThinking] = useState(false);
 
   const recordAction = useCallback(
     (message: string) => {
@@ -220,6 +222,7 @@ export default function Home() {
       // STOP LISTENING while processing
       recognitionRef.current?.stop();
       setListening(false);
+      setIsThinking(true);
 
       try {
         recordAction(`Q: ${transcript.slice(0, 30)}`);
@@ -230,14 +233,15 @@ export default function Home() {
         // Don't send image with every question - too much bandwidth on slow WiFi
         // Device context from deviceLabel is enough
 
-        // Add timeout to prevent hanging on slow WiFi
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => {
-          console.log("⏱️ Request timeout after 15 seconds");
-          controller.abort();
-        }, 15000); // 15 second timeout
+        // Build user message for history
+        const userMessage = deviceLabelRef.current
+          ? `Detected device: ${deviceLabelRef.current}\nUser: ${transcript}`
+          : `User: ${transcript}`;
 
-        console.log("🌐 Fetching QA API...");
+        // Create abort controller for timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000);
+
         const qaResponse = await fetch("/api/qa", {
           method: "POST",
           headers: {
@@ -246,7 +250,8 @@ export default function Home() {
           body: JSON.stringify({
             deviceDescription: deviceLabelRef.current || null,
             transcript,
-            // Removed image to reduce bandwidth
+            image: null, // Don't send images to reduce lag
+            conversationHistory: conversationHistoryRef.current,
           }),
           signal: controller.signal,
         }).finally(() => clearTimeout(timeoutId));
@@ -312,6 +317,7 @@ export default function Home() {
               }
 
               if (typeof payload.delta === "string") {
+                setIsThinking(false); // Stop thinking animation on first response
                 aggregated += payload.delta;
                 setStatus(aggregated);
                 setDisplayResponse(aggregated);
@@ -336,6 +342,15 @@ export default function Home() {
 
         setLastSpoken(aggregated);
 
+        // Add to conversation history (keep last 10 exchanges = 20 messages)
+        conversationHistoryRef.current.push(
+          { role: "user", content: userMessage },
+          { role: "assistant", content: aggregated }
+        );
+        if (conversationHistoryRef.current.length > 20) {
+          conversationHistoryRef.current = conversationHistoryRef.current.slice(-20);
+        }
+
         // Wait for speech to finish, then restart listening
         await speechQueueRef.current;
         setTimeout(() => {
@@ -343,22 +358,9 @@ export default function Home() {
         }, 500);
 
       } catch (err) {
-        console.error("❌ QA Request Error:", err);
-        const errorMessage = err instanceof Error ? err.message : "Unknown error";
-        console.error("Error details:", errorMessage);
-
-        // Show specific error to user
-        if (errorMessage.includes("network") || errorMessage.includes("fetch")) {
-          setStatus("Network error. Check your connection and try again.");
-          setDisplayResponse("Network error. Check your connection.");
-        } else if (errorMessage.includes("timeout")) {
-          setStatus("Request timed out. Try again.");
-          setDisplayResponse("Request timed out.");
-        } else {
-          setStatus("Something went wrong. Try again.");
-          setDisplayResponse("Error occurred.");
-        }
-
+        console.error(err);
+        setIsThinking(false);
+        setStatus("Something went wrong. Try again.");
         setTimeout(() => {
           startListening();
         }, 2000);
@@ -726,6 +728,24 @@ export default function Home() {
               </div>
             </div>
           )}
+
+          {/* Thinking Animation */}
+          {isThinking && (
+            <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-40 flex items-center justify-center pointer-events-none">
+              <div className="relative flex items-center justify-center">
+                {/* Outer pulsing ring */}
+                <div className="absolute h-24 w-24 rounded-full bg-black/20 animate-ping" style={{animationDuration: '2s'}} />
+                {/* Middle pulsing ring */}
+                <div className="absolute h-16 w-16 rounded-full bg-black/40 animate-pulse" style={{animationDuration: '1.5s'}} />
+                {/* Inner orb with gradient */}
+                <div className="relative h-12 w-12 rounded-full bg-gradient-to-br from-gray-800 via-gray-900 to-black shadow-2xl shadow-black/50 animate-pulse">
+                  {/* Inner glow */}
+                  <div className="absolute inset-2 rounded-full bg-gradient-to-br from-gray-600/40 to-transparent animate-pulse" style={{animationDuration: '1s'}} />
+                </div>
+              </div>
+            </div>
+          )}
+
           {needsAudioUnlock && !audioUnlocked && (
             <div className="pointer-events-auto absolute bottom-20 left-1/2 z-30 w-[90%] max-w-sm -translate-x-1/2 rounded-2xl border border-white/40 bg-black/85 px-6 py-6 text-center text-white shadow-2xl backdrop-blur">
               <p className="text-sm font-semibold uppercase tracking-[0.45em] text-white/75">
