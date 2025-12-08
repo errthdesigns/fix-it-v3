@@ -129,7 +129,7 @@ export async function POST(request: Request) {
 
     // Build user message with vision if image is available
     const userContent: Array<{ type: string; text?: string; image_url?: { url: string } }> = [
-      { type: "text", text: textPrompt }
+      { type: "text", text: userPrompt }
     ];
 
     if (image && typeof image === "string") {

@@ -238,6 +238,10 @@ export default function Home() {
           ? `Detected device: ${deviceLabelRef.current}\nUser: ${transcript}`
           : `User: ${transcript}`;
 
+        // Create abort controller for timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000);
+
         const qaResponse = await fetch("/api/qa", {
           method: "POST",
           headers: {
@@ -246,7 +250,7 @@ export default function Home() {
           body: JSON.stringify({
             deviceDescription: deviceLabelRef.current || null,
             transcript,
-            image: currentFrame,
+            image: null, // Don't send images to reduce lag
             conversationHistory: conversationHistoryRef.current,
           }),
           signal: controller.signal,
