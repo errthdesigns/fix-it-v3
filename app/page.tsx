@@ -510,7 +510,7 @@ export default function Home() {
       return null;
     }
 
-    const targetWidth = 1280;
+    const targetWidth = 640;
     const aspect =
       video.videoWidth && video.videoHeight
         ? video.videoHeight / video.videoWidth
@@ -522,7 +522,7 @@ export default function Home() {
     if (!context) return null;
 
     context.drawImage(video, 0, 0, targetWidth, targetHeight);
-    const snapshot = canvas.toDataURL("image/jpeg", 0.85);
+    const snapshot = canvas.toDataURL("image/webp", 0.65);
     recordAction("Frame captured");
     return snapshot;
   }, [recordAction]);
