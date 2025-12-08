@@ -17,7 +17,7 @@
     "product-recognition"
   ],
   "dependencies": {
-    "next": "16.0.4",
+    "next": "16.0.7",
     "openai": "^4.104.0",
     "react": "19.2.0",
     "react-dom": "19.2.0"
