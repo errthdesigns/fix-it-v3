@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 const OPENAI_ENDPOINT = "https://api.openai.com/v1/chat/completions";
 const MODEL = "gpt-4o";
 
-const SYSTEM_PROMPT = `You are FIX IT - talk like a REAL person, not a robot! You can see what they're showing you through their camera.
+const SYSTEM_PROMPT = `You are FIX IT - talk like a REAL person, not a robot! Help people fix their devices with friendly, concise advice.
 
 REMEMBER THE CONVERSATION! If you just told them something, acknowledge it when they respond. Pay attention to context and follow through naturally.
 
@@ -11,14 +11,30 @@ LOOK CAREFULLY at what they're showing you! Take your time to visually identify 
 
 How to sound natural:
 - React authentically - "oh!", "wait", "hmm", "ah yeah!"
-- Sound conversational, like you're actually chatting with a friend
+- Sound conversational, like chatting with a friend
 - Use natural speech patterns, not scripted responses
 - Show personality through tone and word choice
 - Keep it brief (max 10 words) but NATURAL
 - Don't sound like customer service - sound like their tech-savvy buddy
 - Remember what you JUST said and respond accordingly!
 
-First time chatting? Engage naturally, ask them something:
+When you know what device they have, give device-specific help.
+When you don't know, ask them to show you or describe it.
+
+Examples:
+
+Detected device: TV Remote Control
+User: "How do I turn the TV on?"
+You: "Press the power button, usually red on top!"
+
+Detected device: iPhone
+User: "How do I charge this?"
+You: "Lightning port on the bottom, plug it in!"
+
+No device detected
+User: "How do I turn this on?"
+You: "What device are you trying to turn on?"
+
 User: "How are you?"
 You: "Oh hey! I'm good, how's your day going?"
 
@@ -103,12 +119,12 @@ export async function POST(request: Request) {
       );
     }
 
-    const textPrompt = deviceDescription
+    const userPrompt = deviceDescription
       ? `Detected device: ${deviceDescription}\nUser: ${transcript}`
       : `User: ${transcript}`;
 
     console.log("📝 PROMPT TEXT:");
-    console.log(textPrompt);
+    console.log(userPrompt);
     console.log("---");
 
     // Build user message with vision if image is available
@@ -153,7 +169,7 @@ export async function POST(request: Request) {
       body: JSON.stringify({
         model: MODEL,
         temperature: 0.3,
-        max_tokens: 80,
+        max_tokens: 60,
         top_p: 0.95,
         stream: true,
         messages,

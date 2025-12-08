@@ -94,6 +94,7 @@ export default function Home() {
     async (line: string) => {
       const trimmed = line.trim();
       if (!trimmed) return;
+      console.log("🔊 Playing voice:", trimmed);
       try {
         isSpeakingRef.current = true;
         const voiceResponse = await fetch("/api/voice", {
@@ -189,8 +190,11 @@ export default function Home() {
       const result = event.results[event.results.length - 1];
       const interim = result[0]?.transcript?.trim() ?? "";
 
+      console.log("🎙️ Speech result:", { interim, isFinal: result.isFinal });
+
       // If user starts speaking while AI is talking, stop the AI immediately
       if (isSpeakingRef.current && audioRef.current && !audioRef.current.paused) {
+        console.log("🔇 Interrupting AI speech");
         audioRef.current.pause();
         audioRef.current.currentTime = 0;
         isSpeakingRef.current = false;
@@ -202,11 +206,18 @@ export default function Home() {
         return;
       }
       const transcript = interim;
+      console.log("🎤 Speech detected (final):", transcript);
       if (!transcript || transcript === lastTranscriptRef.current) {
+        console.log("⚠️ Skipping - empty or duplicate transcript");
         return;
       }
       lastTranscriptRef.current = transcript;
-      console.log("User question:", transcript);
+      console.log("✅ Processing user question:", transcript);
+      console.log("📊 State:", {
+        listening,
+        isSpeaking: isSpeakingRef.current,
+        deviceLabel: deviceLabelRef.current,
+      });
 
       // STOP LISTENING while processing
       recognitionRef.current?.stop();
@@ -219,8 +230,8 @@ export default function Home() {
         console.log("  Device:", deviceLabelRef.current || "null");
         console.log("  Question:", transcript);
 
-        // Capture current camera frame for visual context
-        const currentFrame = captureFrame();
+        // Don't send image with every question - too much bandwidth on slow WiFi
+        // Device context from deviceLabel is enough
 
         // Build user message for history
         const userMessage = deviceLabelRef.current
@@ -238,15 +249,24 @@ export default function Home() {
             image: currentFrame,
             conversationHistory: conversationHistoryRef.current,
           }),
-        });
+          signal: controller.signal,
+        }).finally(() => clearTimeout(timeoutId));
+
+        console.log("✅ QA API responded:", qaResponse.status, qaResponse.statusText);
 
         if (!qaResponse.ok || !qaResponse.body) {
           const qaError = await qaResponse
             .json()
             .catch(() => ({ error: "QA request failed." }));
-          throw new Error(qaError.error ?? "QA request failed.");
+          console.error("❌ QA Response Error:", {
+            status: qaResponse.status,
+            statusText: qaResponse.statusText,
+            error: qaError
+          });
+          throw new Error(qaError.error ?? `QA request failed with status ${qaResponse.status}`);
         }
 
+        console.log("📡 Starting to read streaming response...");
         const reader = qaResponse.body.getReader();
         const decoder = new TextDecoder();
         let buffer = "";
@@ -291,6 +311,7 @@ export default function Home() {
               if (payload.error) {
                 throw new Error(payload.error);
               }
+
               if (typeof payload.delta === "string") {
                 setIsThinking(false); // Stop thinking animation on first response
                 aggregated += payload.delta;
@@ -299,6 +320,7 @@ export default function Home() {
                 flushSentences();
               }
               if (payload.done || payload.text) {
+                console.log("🏁 Response complete:", aggregated);
                 doneSignal = true;
                 flushSentences(true);
               }
@@ -363,9 +385,28 @@ export default function Home() {
       setListening(false);
       isStartingRecognitionRef.current = false;
 
-      // Only restart on specific errors, not network/aborted/no-speech
       const error = event.error;
-      if (error !== 'network' && error !== 'aborted' && error !== 'no-speech') {
+
+      // Don't restart on aborted (we manually stopped it)
+      if (error === 'aborted') {
+        return;
+      }
+
+      // Restart on network errors (transient) and other errors after a delay
+      // Don't spam restarts on no-speech
+      if (error === 'no-speech') {
+        // No speech detected, just restart quietly
+        setTimeout(() => {
+          startListening();
+        }, 500);
+      } else if (error === 'network') {
+        // Network errors are usually transient, restart after short delay
+        console.log("🔄 Network error, restarting speech recognition...");
+        setTimeout(() => {
+          startListening();
+        }, 1500);
+      } else {
+        // Other errors, restart with longer delay
         setTimeout(() => {
           startListening();
         }, 2000);
@@ -510,7 +551,7 @@ export default function Home() {
       return null;
     }
 
-    const targetWidth = 640;
+    const targetWidth = 400; // Further reduced for slow networks
     const aspect =
       video.videoWidth && video.videoHeight
         ? video.videoHeight / video.videoWidth
@@ -522,7 +563,7 @@ export default function Home() {
     if (!context) return null;
 
     context.drawImage(video, 0, 0, targetWidth, targetHeight);
-    const snapshot = canvas.toDataURL("image/webp", 0.65);
+    const snapshot = canvas.toDataURL("image/webp", 0.4); // Lower quality for slow networks
     recordAction("Frame captured");
     return snapshot;
   }, [recordAction]);
@@ -631,20 +672,20 @@ export default function Home() {
   );
 
   useEffect(() => {
-    // Passive background scanning every 8 seconds (less aggressive)
-    // Scans quietly without blocking conversation
+    // Passive background scanning every 20 seconds (optimized for mobile)
+    // Skip scanning during active conversation to reduce lag
     const scanInterval = setInterval(() => {
       if (!cameraReady || !audioUnlocked) return;
-      // Scan passively in background - don't block if already analyzing
-      if (!isAnalyzing) {
+      // Don't scan if analyzing, listening, or speaking (reduces mobile lag)
+      if (!isAnalyzing && !listening && !isSpeakingRef.current) {
         handleScan();
       }
-    }, 8000);
+    }, 20000);
 
     return () => {
       clearInterval(scanInterval);
     };
-  }, [cameraReady, handleScan, isAnalyzing, audioUnlocked]);
+  }, [cameraReady, handleScan, isAnalyzing, audioUnlocked, listening]);
 
   useEffect(() => {
     // Do one initial scan after camera is ready
@@ -668,11 +709,12 @@ export default function Home() {
           </div>
           <video
             ref={videoRef}
-            className="h-full w-full object-cover pointer-events-none"
+            className="h-full w-full object-contain pointer-events-none"
             autoPlay
             muted
             playsInline
           />
+
           {/* Listening Indicator */}
           {listening && (
             <div className="absolute bottom-6 right-6 z-30 flex h-16 w-16 items-center justify-center pointer-events-none">
