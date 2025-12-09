@@ -250,6 +250,10 @@ export default function Home() {
 
       if (!result.isFinal) {
         setStatus(interim ? `"${interim}"` : "Listening...");
+        // Clear caption when user starts speaking
+        if (interim) {
+          setDisplayResponse("");
+        }
         return;
       }
       const transcript = interim;
@@ -283,55 +287,57 @@ export default function Home() {
           setGuidanceSteps(steps);
           setCurrentStepIndex(0);
 
-          // Display initial response
+          // Display initial response IMMEDIATELY
           const response = scenario.productRecognitionMessage;
           setDisplayResponse(response);
           setStatus(response);
           recordAction(`Demo: ${scenario.name}`);
 
-          // Speak the response
-          await enqueueSpeech(response);
-          await speechQueueRef.current;
-
-          // Show guidance panel after a short delay
+          // Show guidance panel IMMEDIATELY (no waiting for voice)
           setTimeout(() => {
             setShowGuidancePanel(true);
-          }, 1000);
+          }, 300);
 
-          // Auto-restart listening after guidance is shown
+          // Start voice in background (non-blocking)
+          enqueueSpeech(response);
+
+          // Auto-restart listening quickly
           setTimeout(() => {
             startListening();
-          }, 1500);
+          }, 800);
         } else if (detectedCategory) {
           // Fallback: Show product category sheet
           console.log(`🛒 Product category detected: "${detectedCategory.name}" in ${responseTime.toFixed(2)}ms`);
           setProductCategory(detectedCategory);
-          setShowProductSheet(true);
 
           const categoryMessage = `I can help you find ${detectedCategory.name} at Currys. Swipe up to browse our selection.`;
           setDisplayResponse(categoryMessage);
           setStatus(categoryMessage);
           recordAction(`Category: ${detectedCategory.name}`);
 
-          // Speak the response
-          await enqueueSpeech(categoryMessage);
-          await speechQueueRef.current;
+          // Show sheet IMMEDIATELY
+          setShowProductSheet(true);
 
-          // Auto-restart listening
+          // Start voice in background (non-blocking)
+          enqueueSpeech(categoryMessage);
+
+          // Auto-restart listening quickly
           setTimeout(() => {
             startListening();
-          }, 1500);
+          }, 800);
         } else {
           // No scenario or category matched
           const noMatchMessage = "I don't have a demo scenario for that. Try asking about connecting a laptop to TV, TV remote buttons, or HDMI port damage.";
           setDisplayResponse(noMatchMessage);
           setStatus(noMatchMessage);
-          await enqueueSpeech(noMatchMessage);
-          await speechQueueRef.current;
 
+          // Start voice in background (non-blocking)
+          enqueueSpeech(noMatchMessage);
+
+          // Auto-restart listening quickly
           setTimeout(() => {
             startListening();
-          }, 2000);
+          }, 800);
         }
 
         return; // Skip API call in demo mode
@@ -483,8 +489,8 @@ export default function Home() {
 
     recognition.onstart = () => {
       isStartingRecognitionRef.current = false;
-      // Clear the display when user starts talking
-      setDisplayResponse("");
+      // Don't clear display immediately - let captions persist
+      // Only clear when user actually speaks (handled in onresult)
       // If AI is speaking when user starts talking, interrupt it
       if (isSpeakingRef.current && audioRef.current) {
         audioRef.current.pause();
@@ -819,9 +825,9 @@ export default function Home() {
       <div className="absolute inset-0 bg-black/95 pointer-events-none" />
       <div className="absolute inset-0 flex items-center justify-center">
         <div className="relative h-full w-full overflow-hidden bg-black">
-          <div className="pointer-events-none absolute left-6 top-6 flex flex-col items-start gap-0.5 text-black">
-            <span className="text-4xl font-black tracking-[0.15em]">FIX IT</span>
-            <span className="text-xs uppercase tracking-[0.25em]">
+          <div className="pointer-events-none absolute left-4 sm:left-6 top-4 sm:top-6 flex flex-col items-start gap-0.5 text-white z-40">
+            <span className="text-2xl sm:text-3xl md:text-4xl font-black tracking-[0.15em] drop-shadow-lg">FIX IT</span>
+            <span className="text-[0.6rem] sm:text-xs uppercase tracking-[0.2em] sm:tracking-[0.25em] drop-shadow-lg">
               object recognition v1
             </span>
           </div>
@@ -840,9 +846,9 @@ export default function Home() {
 
           {/* Listening Indicator */}
           {listening && (
-            <div className="absolute bottom-6 right-6 z-30 flex h-16 w-16 items-center justify-center pointer-events-none">
+            <div className="absolute top-20 sm:top-24 right-4 sm:right-6 z-50 flex h-14 w-14 sm:h-16 sm:w-16 items-center justify-center pointer-events-none">
               <div className="absolute inset-0 rounded-full bg-red-500/30 animate-ping" />
-              <div className="relative flex h-12 w-12 items-center justify-center rounded-full border-2 border-red-500 bg-red-500/90 shadow-xl">
+              <div className="relative flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-full border-2 border-red-500 bg-red-500/90 shadow-xl">
                 <div className="h-3 w-3 rounded-full bg-white animate-pulse" />
               </div>
             </div>
@@ -867,10 +873,10 @@ export default function Home() {
             </div>
           )}
 
-          {/* FIX IT Response Display */}
+          {/* FIX IT Response Display - Captions */}
           {displayResponse && (
-            <div className="pointer-events-none absolute bottom-6 sm:bottom-8 left-1/2 -translate-x-1/2 max-w-sm sm:max-w-lg mx-4 px-5 sm:px-8 py-3 sm:py-4 rounded-2xl backdrop-blur-md border-2 text-center transition-all duration-300 bg-black/90 border-white/30">
-              <p className="text-sm sm:text-base text-white font-medium leading-relaxed">
+            <div className="pointer-events-none absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[85%] max-w-2xl z-50 px-6 sm:px-8 py-4 sm:py-5 rounded-2xl backdrop-blur-xl border-2 text-center transition-all duration-300 bg-black/95 border-white/40 shadow-2xl">
+              <p className="text-base sm:text-lg md:text-xl text-white font-light leading-relaxed tracking-wide">
                 {displayResponse}
               </p>
             </div>
