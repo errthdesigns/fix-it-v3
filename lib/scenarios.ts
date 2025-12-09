@@ -78,6 +78,17 @@ export const DEMO_SCENARIOS: Scenario[] = [
         description: 'Located at the top of the remote, usually red or with a power symbol (⏻). Press to turn TV on/off.',
         emoji: '⚡',
         tips: ['Usually the largest button at the top', 'May light up red when pressed'],
+        highlights: [
+          {
+            x: 50,
+            y: 15,
+            width: 15,
+            height: 8,
+            label: 'Power',
+            shape: 'circle',
+            pulse: true,
+          },
+        ],
       },
       {
         id: 'step-2',
@@ -85,6 +96,26 @@ export const DEMO_SCENARIOS: Scenario[] = [
         description: 'Volume buttons on the right side (+ and -). Channel buttons on the left or below volume controls.',
         emoji: '🔊',
         tips: ['Volume: Usually marked Vol+ and Vol-', 'Channel: Often marked CH↑ and CH↓'],
+        highlights: [
+          {
+            x: 65,
+            y: 40,
+            width: 12,
+            height: 20,
+            label: 'Vol',
+            shape: 'rect',
+            pulse: true,
+          },
+          {
+            x: 25,
+            y: 40,
+            width: 12,
+            height: 20,
+            label: 'CH',
+            shape: 'rect',
+            pulse: true,
+          },
+        ],
       },
       {
         id: 'step-3',
@@ -92,6 +123,17 @@ export const DEMO_SCENARIOS: Scenario[] = [
         description: 'Labeled "Input", "Source", or "HDMI". Press this to switch between TV, HDMI, and other inputs.',
         emoji: '🎮',
         tips: ['Usually in the top third of the remote', 'May require pressing multiple times to cycle through inputs'],
+        highlights: [
+          {
+            x: 50,
+            y: 30,
+            width: 20,
+            height: 8,
+            label: 'Input',
+            shape: 'rect',
+            pulse: true,
+          },
+        ],
       },
     ],
     fallbackToCurrys: false,

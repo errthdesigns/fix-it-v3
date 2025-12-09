@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import GuidancePanel from "@/components/GuidancePanel";
 import CurrysRecommendationPanel from "@/components/CurrysRecommendationPanel";
 import SwipeableProductSheet from "@/components/SwipeableProductSheet";
+import DeviceOverlay from "@/components/DeviceOverlay";
 import { processDemoInput, shouldShowCurrysProducts } from "@/lib/demoMode";
 import { GuidanceStep, Scenario, ProductCategory } from "@/lib/types";
 
@@ -831,6 +832,11 @@ export default function Home() {
             muted
             playsInline
           />
+
+          {/* AR Device Overlays */}
+          {showGuidancePanel && guidanceSteps[currentStepIndex]?.highlights && (
+            <DeviceOverlay highlights={guidanceSteps[currentStepIndex].highlights!} />
+          )}
 
           {/* Listening Indicator */}
           {listening && (

@@ -3,6 +3,16 @@
  * Types for demo mode, scenarios, guidance steps, and product recommendations
  */
 
+export interface DeviceHighlight {
+  x: number; // Percentage from left (0-100)
+  y: number; // Percentage from top (0-100)
+  width: number; // Width in percentage
+  height: number; // Height in percentage
+  label?: string; // e.g., "Power Button", "HDMI 1"
+  shape?: 'circle' | 'rect' | 'port'; // Shape of highlight
+  pulse?: boolean; // Whether to animate with pulse
+}
+
 export interface GuidanceStep {
   id: string;
   title: string;
@@ -11,6 +21,7 @@ export interface GuidanceStep {
   stepNumber: number;
   totalSteps: number;
   tips?: string[];
+  highlights?: DeviceHighlight[]; // AR-style overlays on camera feed
 }
 
 export interface CurrysProduct {
