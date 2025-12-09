@@ -828,19 +828,19 @@ export default function Home() {
             </div>
           )}
           {needsAudioUnlock && !audioUnlocked && (
-            <div className="pointer-events-auto absolute bottom-20 left-1/2 z-30 w-[90%] max-w-sm -translate-x-1/2 rounded-2xl border border-white/40 bg-black/85 px-6 py-6 text-center text-white shadow-2xl backdrop-blur">
-              <p className="text-sm font-semibold uppercase tracking-[0.45em] text-white/75">
+            <div className="pointer-events-auto absolute bottom-16 sm:bottom-20 left-1/2 z-30 w-[90%] max-w-sm -translate-x-1/2 rounded-2xl border border-white/40 bg-black/85 px-5 sm:px-6 py-5 sm:py-6 text-center text-white shadow-2xl backdrop-blur">
+              <p className="text-xs sm:text-sm font-semibold uppercase tracking-[0.35em] sm:tracking-[0.45em] text-white/75">
                 Ready to fix it
               </p>
-              <ol className="mt-4 space-y-2 text-base leading-relaxed text-white/90 text-left list-decimal list-inside">
+              <ol className="mt-3 sm:mt-4 space-y-2 text-sm sm:text-base leading-relaxed text-white/90 text-left list-decimal list-inside">
                 <li>Point your camera at the device.</li>
-                <li>Speak aloud saying what’s not working.</li>
+                <li>Speak aloud saying what's not working.</li>
                 <li>FIX IT will look through your camera and talk you through the fix.</li>
               </ol>
               <button
                 type="button"
                 onClick={handleAudioUnlock}
-                className="mt-5 w-full rounded-full border border-white/60 bg-white/90 px-8 py-3 text-base font-bold uppercase tracking-[0.35em] text-slate-900 transition hover:bg-white"
+                className="mt-4 sm:mt-5 w-full rounded-full border border-white/60 bg-white/90 px-6 sm:px-8 py-3 sm:py-3 text-sm sm:text-base font-bold uppercase tracking-[0.25em] sm:tracking-[0.35em] text-slate-900 transition hover:bg-white active:scale-95 touch-manipulation"
               >
                 START
               </button>
@@ -849,8 +849,8 @@ export default function Home() {
 
           {/* FIX IT Response Display */}
           {displayResponse && (
-            <div className="pointer-events-none absolute bottom-8 left-1/2 -translate-x-1/2 max-w-lg px-8 py-4 rounded-2xl backdrop-blur-md border-2 text-center transition-all duration-300 bg-black/90 border-white/30">
-              <p className="text-base text-white font-medium leading-relaxed">
+            <div className="pointer-events-none absolute bottom-6 sm:bottom-8 left-1/2 -translate-x-1/2 max-w-sm sm:max-w-lg mx-4 px-5 sm:px-8 py-3 sm:py-4 rounded-2xl backdrop-blur-md border-2 text-center transition-all duration-300 bg-black/90 border-white/30">
+              <p className="text-sm sm:text-base text-white font-medium leading-relaxed">
                 {displayResponse}
               </p>
             </div>
