@@ -2,8 +2,7 @@
 
 /**
  * FIX IT - Step-by-Step Guidance Panel
- * Displays repair steps with visual indicators, navigation, and progress tracking
- * Optimized for projectors: large text, high contrast, responsive design
+ * Minimal glass design with black theme
  */
 
 import { GuidanceStep } from '@/lib/types';
@@ -30,25 +29,25 @@ export default function GuidancePanel({
   if (!currentStep) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 md:p-8 bg-black/80 backdrop-blur-sm overflow-y-auto">
-      <div className="w-full max-w-3xl my-auto bg-slate-900/95 border-2 border-pink-500 rounded-2xl shadow-2xl overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 md:p-8 bg-black/60 backdrop-blur-xl overflow-y-auto">
+      <div className="w-full max-w-3xl my-auto bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl shadow-2xl overflow-hidden">
         {/* Header */}
-        <div className="bg-gradient-to-r from-pink-500 to-purple-600 p-4 sm:p-6">
+        <div className="p-5 sm:p-8 border-b border-white/5">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-              <span className="text-5xl sm:text-6xl flex-shrink-0">{currentStep.emoji}</span>
+              <span className="text-4xl sm:text-5xl flex-shrink-0 opacity-60">{currentStep.emoji}</span>
               <div className="min-w-0">
-                <p className="text-white/80 text-xs sm:text-sm font-medium">
+                <p className="text-white/40 text-xs sm:text-sm font-light uppercase tracking-wider">
                   Step {currentStep.stepNumber} of {currentStep.totalSteps}
                 </p>
-                <h2 className="text-white text-lg sm:text-2xl font-bold mt-1 line-clamp-2">
+                <h2 className="text-white text-xl sm:text-3xl font-light mt-1 line-clamp-2">
                   {currentStep.title}
                 </h2>
               </div>
             </div>
             <button
               onClick={onClose}
-              className="text-white/80 hover:text-white text-4xl sm:text-3xl font-light transition-colors flex-shrink-0 w-10 h-10 flex items-center justify-center"
+              className="text-white/40 hover:text-white text-3xl font-extralight transition-colors flex-shrink-0 w-10 h-10 flex items-center justify-center"
               aria-label="Close guidance"
             >
               ×
@@ -57,9 +56,9 @@ export default function GuidancePanel({
         </div>
 
         {/* Progress Bar */}
-        <div className="h-2 bg-slate-800">
+        <div className="h-px bg-white/5">
           <div
-            className="h-full bg-gradient-to-r from-pink-500 to-purple-600 transition-all duration-500"
+            className="h-full bg-white/30 transition-all duration-500"
             style={{
               width: `${((currentStepIndex + 1) / steps.length) * 100}%`,
             }}
@@ -68,19 +67,19 @@ export default function GuidancePanel({
 
         {/* Content */}
         <div className="p-5 sm:p-8">
-          <p className="text-slate-200 text-base sm:text-xl leading-relaxed mb-5 sm:mb-6">
+          <p className="text-white/70 text-base sm:text-xl font-light leading-relaxed mb-5 sm:mb-6">
             {currentStep.description}
           </p>
 
           {currentStep.tips && currentStep.tips.length > 0 && (
-            <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-4 sm:p-5 mb-5 sm:mb-6">
-              <p className="text-pink-400 font-semibold text-xs sm:text-sm uppercase tracking-wide mb-2 sm:mb-3">
-                💡 Pro Tips
+            <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl p-4 sm:p-5 mb-5 sm:mb-6">
+              <p className="text-white/50 font-light text-xs sm:text-sm uppercase tracking-widest mb-2 sm:mb-3">
+                Tips
               </p>
               <ul className="space-y-2">
                 {currentStep.tips.map((tip, idx) => (
-                  <li key={idx} className="text-slate-300 text-sm sm:text-base flex items-start gap-2">
-                    <span className="text-pink-400 mt-1">•</span>
+                  <li key={idx} className="text-white/60 text-sm sm:text-base font-light flex items-start gap-2">
+                    <span className="text-white/30 mt-1">•</span>
                     <span>{tip}</span>
                   </li>
                 ))}
@@ -94,11 +93,11 @@ export default function GuidancePanel({
               onClick={onPrevious}
               disabled={isFirstStep}
               className={`
-                px-4 sm:px-6 py-3 sm:py-3 rounded-lg font-semibold text-base sm:text-lg transition-all min-w-[100px] touch-manipulation
+                px-4 sm:px-6 py-3 rounded-xl font-light text-base sm:text-lg transition-all min-w-[100px] touch-manipulation
                 ${
                   isFirstStep
-                    ? 'bg-slate-800 text-slate-600 cursor-not-allowed'
-                    : 'bg-slate-800 text-white hover:bg-slate-700 active:scale-95'
+                    ? 'bg-white/5 text-white/20 cursor-not-allowed'
+                    : 'bg-white/10 text-white/80 hover:bg-white/15 active:scale-95 backdrop-blur-sm'
                 }
               `}
             >
@@ -110,13 +109,13 @@ export default function GuidancePanel({
                 <div
                   key={idx}
                   className={`
-                    w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full transition-all duration-300
+                    w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full transition-all duration-300
                     ${
                       idx === currentStepIndex
-                        ? 'bg-pink-500 scale-125'
+                        ? 'bg-white/80 scale-125'
                         : idx < currentStepIndex
-                        ? 'bg-purple-500'
-                        : 'bg-slate-700'
+                        ? 'bg-white/40'
+                        : 'bg-white/10'
                     }
                   `}
                 />
@@ -127,11 +126,11 @@ export default function GuidancePanel({
               onClick={onNext}
               disabled={isLastStep}
               className={`
-                px-4 sm:px-6 py-3 sm:py-3 rounded-lg font-semibold text-base sm:text-lg transition-all min-w-[100px] touch-manipulation
+                px-4 sm:px-6 py-3 rounded-xl font-light text-base sm:text-lg transition-all min-w-[100px] touch-manipulation
                 ${
                   isLastStep
-                    ? 'bg-slate-800 text-slate-600 cursor-not-allowed'
-                    : 'bg-gradient-to-r from-pink-500 to-purple-600 text-white active:scale-95 hover:shadow-lg hover:shadow-pink-500/50'
+                    ? 'bg-white/5 text-white/20 cursor-not-allowed'
+                    : 'bg-white/20 text-white backdrop-blur-sm hover:bg-white/25 active:scale-95'
                 }
               `}
             >
@@ -143,9 +142,9 @@ export default function GuidancePanel({
             <div className="mt-5 sm:mt-6 text-center">
               <button
                 onClick={onClose}
-                className="px-6 sm:px-8 py-3 sm:py-4 bg-green-600 hover:bg-green-500 active:bg-green-700 text-white font-bold text-base sm:text-lg rounded-lg transition-all active:scale-95 hover:shadow-lg hover:shadow-green-500/50 touch-manipulation"
+                className="px-6 sm:px-8 py-3 sm:py-4 bg-white/15 hover:bg-white/20 backdrop-blur-sm text-white font-light text-base sm:text-lg rounded-xl transition-all active:scale-95 touch-manipulation"
               >
-                ✓ Complete
+                Complete
               </button>
             </div>
           )}
