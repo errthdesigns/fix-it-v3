@@ -20,6 +20,17 @@ export interface CurrysProduct {
   specs: string[];
   imageUrl?: string;
   currysUrl: string;
+  colors?: string[];
+  inStock?: boolean;
+  rating?: number;
+  reviewCount?: number;
+}
+
+export interface ProductCategory {
+  id: string;
+  name: string;
+  keywords: string[];
+  products: CurrysProduct[];
 }
 
 export interface Scenario {

@@ -3,8 +3,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import GuidancePanel from "@/components/GuidancePanel";
 import CurrysRecommendationPanel from "@/components/CurrysRecommendationPanel";
+import SwipeableProductSheet from "@/components/SwipeableProductSheet";
 import { processDemoInput, shouldShowCurrysProducts } from "@/lib/demoMode";
-import { GuidanceStep, Scenario } from "@/lib/types";
+import { GuidanceStep, Scenario, ProductCategory } from "@/lib/types";
 
 type SpeechRecognitionAlternativeLike = {
   transcript: string;
@@ -92,6 +93,8 @@ export default function Home() {
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [showGuidancePanel, setShowGuidancePanel] = useState(false);
   const [showCurrysPanel, setShowCurrysPanel] = useState(false);
+  const [productCategory, setProductCategory] = useState<ProductCategory | null>(null);
+  const [showProductSheet, setShowProductSheet] = useState(false);
 
   const recordAction = useCallback(
     (message: string) => {
@@ -126,6 +129,11 @@ export default function Home() {
 
   const handleCloseCurrys = useCallback(() => {
     setShowCurrysPanel(false);
+  }, []);
+
+  const handleCloseProductSheet = useCallback(() => {
+    setShowProductSheet(false);
+    setProductCategory(null);
   }, []);
 
   const playVoiceLine = useCallback(
@@ -266,7 +274,7 @@ export default function Home() {
       if (isDemoMode) {
         console.log("🎭 Demo mode: Processing locally...");
         const startTime = performance.now();
-        const { scenario, steps, responseTime } = processDemoInput(transcript);
+        const { scenario, steps, productCategory: detectedCategory, responseTime } = processDemoInput(transcript);
 
         if (scenario) {
           console.log(`✅ Matched scenario: "${scenario.name}" in ${responseTime.toFixed(2)}ms`);
@@ -293,8 +301,27 @@ export default function Home() {
           setTimeout(() => {
             startListening();
           }, 1500);
+        } else if (detectedCategory) {
+          // Fallback: Show product category sheet
+          console.log(`🛒 Product category detected: "${detectedCategory.name}" in ${responseTime.toFixed(2)}ms`);
+          setProductCategory(detectedCategory);
+          setShowProductSheet(true);
+
+          const categoryMessage = `I can help you find ${detectedCategory.name} at Currys. Swipe up to browse our selection.`;
+          setDisplayResponse(categoryMessage);
+          setStatus(categoryMessage);
+          recordAction(`Category: ${detectedCategory.name}`);
+
+          // Speak the response
+          await enqueueSpeech(categoryMessage);
+          await speechQueueRef.current;
+
+          // Auto-restart listening
+          setTimeout(() => {
+            startListening();
+          }, 1500);
         } else {
-          // No scenario matched
+          // No scenario or category matched
           const noMatchMessage = "I don't have a demo scenario for that. Try asking about connecting a laptop to TV, TV remote buttons, or HDMI port damage.";
           setDisplayResponse(noMatchMessage);
           setStatus(noMatchMessage);
@@ -871,6 +898,14 @@ export default function Home() {
           products={currentScenario.currysProducts}
           onClose={handleCloseCurrys}
           message="This repair requires professional service or replacement. Here are some great options from Currys:"
+        />
+      )}
+
+      {/* Swipeable Product Sheet (Fallback) */}
+      {showProductSheet && productCategory && (
+        <SwipeableProductSheet
+          category={productCategory}
+          onClose={handleCloseProductSheet}
         />
       )}
     </main>

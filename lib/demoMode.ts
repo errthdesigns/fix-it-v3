@@ -3,8 +3,9 @@
  * Fast (<200ms) scenario matching and guidance generation
  */
 
-import { Scenario, GuidanceStep } from './types';
+import { Scenario, GuidanceStep, ProductCategory } from './types';
 import { matchScenario } from './scenarios';
+import { detectProductCategory } from './productCatalog';
 
 /**
  * Process user input in demo mode
@@ -14,6 +15,7 @@ import { matchScenario } from './scenarios';
 export function processDemoInput(userInput: string): {
   scenario: Scenario | null;
   steps: GuidanceStep[];
+  productCategory: ProductCategory | null;
   responseTime: number;
 } {
   const startTime = performance.now();
@@ -21,8 +23,16 @@ export function processDemoInput(userInput: string): {
   const scenario = matchScenario(userInput);
 
   if (!scenario) {
+    // Fallback: Try to detect product category
+    const productCategory = detectProductCategory(userInput);
     const responseTime = performance.now() - startTime;
-    return { scenario: null, steps: [], responseTime };
+
+    if (productCategory) {
+      console.log(`✅ Product category detected: "${productCategory.name}" in ${responseTime.toFixed(2)}ms`);
+      return { scenario: null, steps: [], productCategory, responseTime };
+    }
+
+    return { scenario: null, steps: [], productCategory: null, responseTime };
   }
 
   // Transform scenario steps into GuidanceStep format
@@ -36,7 +46,7 @@ export function processDemoInput(userInput: string): {
 
   console.log(`✅ Demo mode match: "${scenario.name}" in ${responseTime.toFixed(2)}ms`);
 
-  return { scenario, steps, responseTime };
+  return { scenario, steps, productCategory: null, responseTime };
 }
 
 /**
