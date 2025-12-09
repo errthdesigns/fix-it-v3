@@ -1,6 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import GuidancePanel from "@/components/GuidancePanel";
+import CurrysRecommendationPanel from "@/components/CurrysRecommendationPanel";
+import DemoModeToggle from "@/components/DemoModeToggle";
+import { processDemoInput, shouldShowCurrysProducts } from "@/lib/demoMode";
+import { GuidanceStep, Scenario } from "@/lib/types";
 
 type SpeechRecognitionAlternativeLike = {
   transcript: string;
@@ -81,12 +86,60 @@ export default function Home() {
   const isSpeakingRef = useRef(false);
   const isStartingRecognitionRef = useRef(false);
 
+  // Demo Mode State
+  const [isDemoMode, setIsDemoMode] = useState(false);
+  const [currentScenario, setCurrentScenario] = useState<Scenario | null>(null);
+  const [guidanceSteps, setGuidanceSteps] = useState<GuidanceStep[]>([]);
+  const [currentStepIndex, setCurrentStepIndex] = useState(0);
+  const [showGuidancePanel, setShowGuidancePanel] = useState(false);
+  const [showCurrysPanel, setShowCurrysPanel] = useState(false);
+
   const recordAction = useCallback(
     (message: string) => {
       setRecentActions((prev) => [...prev.slice(-3), message]);
     },
     [setRecentActions]
   );
+
+  // Demo Mode Handlers
+  const handleNextStep = useCallback(() => {
+    if (currentStepIndex < guidanceSteps.length - 1) {
+      setCurrentStepIndex((prev) => prev + 1);
+    }
+  }, [currentStepIndex, guidanceSteps.length]);
+
+  const handlePreviousStep = useCallback(() => {
+    if (currentStepIndex > 0) {
+      setCurrentStepIndex((prev) => prev - 1);
+    }
+  }, [currentStepIndex]);
+
+  const handleCloseGuidance = useCallback(() => {
+    setShowGuidancePanel(false);
+
+    // If scenario has Currys products and fallback is enabled, show products
+    if (currentScenario && shouldShowCurrysProducts(currentScenario)) {
+      setTimeout(() => {
+        setShowCurrysPanel(true);
+      }, 500);
+    }
+  }, [currentScenario]);
+
+  const handleCloseCurrys = useCallback(() => {
+    setShowCurrysPanel(false);
+  }, []);
+
+  const handleToggleDemoMode = useCallback((enabled: boolean) => {
+    setIsDemoMode(enabled);
+    console.log(`🎭 Demo mode ${enabled ? 'enabled' : 'disabled'}`);
+
+    // Reset state when switching modes
+    setShowGuidancePanel(false);
+    setShowCurrysPanel(false);
+    setCurrentScenario(null);
+    setGuidanceSteps([]);
+    setCurrentStepIndex(0);
+  }, []);
 
   const playVoiceLine = useCallback(
     async (line: string) => {
@@ -215,11 +268,59 @@ export default function Home() {
         listening,
         isSpeaking: isSpeakingRef.current,
         deviceLabel: deviceLabelRef.current,
+        demoMode: isDemoMode,
       });
 
       // STOP LISTENING while processing
       recognitionRef.current?.stop();
       setListening(false);
+
+      // DEMO MODE: Process locally with <200ms response
+      if (isDemoMode) {
+        console.log("🎭 Demo mode: Processing locally...");
+        const startTime = performance.now();
+        const { scenario, steps, responseTime } = processDemoInput(transcript);
+
+        if (scenario) {
+          console.log(`✅ Matched scenario: "${scenario.name}" in ${responseTime.toFixed(2)}ms`);
+          setCurrentScenario(scenario);
+          setGuidanceSteps(steps);
+          setCurrentStepIndex(0);
+
+          // Display initial response
+          const response = scenario.productRecognitionMessage;
+          setDisplayResponse(response);
+          setStatus(response);
+          recordAction(`Demo: ${scenario.name}`);
+
+          // Speak the response
+          await enqueueSpeech(response);
+          await speechQueueRef.current;
+
+          // Show guidance panel after a short delay
+          setTimeout(() => {
+            setShowGuidancePanel(true);
+          }, 1000);
+
+          // Auto-restart listening after guidance is shown
+          setTimeout(() => {
+            startListening();
+          }, 1500);
+        } else {
+          // No scenario matched
+          const noMatchMessage = "I don't have a demo scenario for that. Try asking about connecting a laptop to TV, TV remote buttons, or HDMI port damage.";
+          setDisplayResponse(noMatchMessage);
+          setStatus(noMatchMessage);
+          await enqueueSpeech(noMatchMessage);
+          await speechQueueRef.current;
+
+          setTimeout(() => {
+            startListening();
+          }, 2000);
+        }
+
+        return; // Skip API call in demo mode
+      }
 
       try {
         recordAction(`Q: ${transcript.slice(0, 30)}`);
@@ -765,6 +866,29 @@ export default function Home() {
       </div>
       <canvas ref={canvasRef} className="hidden" />
       <audio ref={audioRef} className="hidden" />
+
+      {/* Demo Mode Toggle */}
+      <DemoModeToggle isDemoMode={isDemoMode} onToggle={handleToggleDemoMode} />
+
+      {/* Guidance Panel */}
+      {showGuidancePanel && guidanceSteps.length > 0 && (
+        <GuidancePanel
+          steps={guidanceSteps}
+          currentStepIndex={currentStepIndex}
+          onNext={handleNextStep}
+          onPrevious={handlePreviousStep}
+          onClose={handleCloseGuidance}
+        />
+      )}
+
+      {/* Currys Product Recommendations */}
+      {showCurrysPanel && currentScenario?.currysProducts && (
+        <CurrysRecommendationPanel
+          products={currentScenario.currysProducts}
+          onClose={handleCloseCurrys}
+          message="This repair requires professional service or replacement. Here are some great options from Currys:"
+        />
+      )}
     </main>
   );
 }
