@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import GuidancePanel from "@/components/GuidancePanel";
 import CurrysRecommendationPanel from "@/components/CurrysRecommendationPanel";
-import DemoModeToggle from "@/components/DemoModeToggle";
 import { processDemoInput, shouldShowCurrysProducts } from "@/lib/demoMode";
 import { GuidanceStep, Scenario } from "@/lib/types";
 
@@ -86,8 +85,8 @@ export default function Home() {
   const isSpeakingRef = useRef(false);
   const isStartingRecognitionRef = useRef(false);
 
-  // Demo Mode State
-  const [isDemoMode, setIsDemoMode] = useState(false);
+  // Demo Mode State - LOCKED TO DEMO MODE (always true)
+  const isDemoMode = true;
   const [currentScenario, setCurrentScenario] = useState<Scenario | null>(null);
   const [guidanceSteps, setGuidanceSteps] = useState<GuidanceStep[]>([]);
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
@@ -127,18 +126,6 @@ export default function Home() {
 
   const handleCloseCurrys = useCallback(() => {
     setShowCurrysPanel(false);
-  }, []);
-
-  const handleToggleDemoMode = useCallback((enabled: boolean) => {
-    setIsDemoMode(enabled);
-    console.log(`🎭 Demo mode ${enabled ? 'enabled' : 'disabled'}`);
-
-    // Reset state when switching modes
-    setShowGuidancePanel(false);
-    setShowCurrysPanel(false);
-    setCurrentScenario(null);
-    setGuidanceSteps([]);
-    setCurrentStepIndex(0);
   }, []);
 
   const playVoiceLine = useCallback(
@@ -866,9 +853,6 @@ export default function Home() {
       </div>
       <canvas ref={canvasRef} className="hidden" />
       <audio ref={audioRef} className="hidden" />
-
-      {/* Demo Mode Toggle */}
-      <DemoModeToggle isDemoMode={isDemoMode} onToggle={handleToggleDemoMode} />
 
       {/* Guidance Panel */}
       {showGuidancePanel && guidanceSteps.length > 0 && (
