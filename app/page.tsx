@@ -342,13 +342,13 @@ export default function Home() {
 
         setLastSpoken(aggregated);
 
-        // Add to conversation history (keep last 10 exchanges = 20 messages)
+        // Add to conversation history (keep last 5 exchanges = 10 messages)
         conversationHistoryRef.current.push(
           { role: "user", content: userMessage },
           { role: "assistant", content: aggregated }
         );
-        if (conversationHistoryRef.current.length > 20) {
-          conversationHistoryRef.current = conversationHistoryRef.current.slice(-20);
+        if (conversationHistoryRef.current.length > 10) {
+          conversationHistoryRef.current = conversationHistoryRef.current.slice(-10);
         }
 
         // Wait for speech to finish, then restart listening
