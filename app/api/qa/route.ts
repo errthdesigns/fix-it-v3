@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 const OPENAI_ENDPOINT = "https://api.openai.com/v1/chat/completions";
-const MODEL = "gpt-4o";
+const MODEL = "gpt-5.2-chat-latest"; // GPT-5.2 Instant - faster conversational responses
 
 const SYSTEM_PROMPT = `You are FIX IT - talk like a REAL person, not a robot! Help people fix their devices with friendly, concise advice.
 

@@ -107,7 +107,7 @@ export async function POST(req: NextRequest) {
     let response;
     try {
       response = await openai.chat.completions.create({
-        model: "gpt-4o",
+        model: "gpt-5.2", // GPT-5.2 Thinking - better accuracy for device identification
         messages: [
           {
             role: "user",
