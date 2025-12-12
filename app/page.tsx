@@ -275,6 +275,10 @@ export default function Home() {
       recognitionRef.current?.stop();
       setListening(false);
 
+      // SCAN CAMERA IMMEDIATELY to get fresh device data
+      console.log("📸 Scanning camera for device before processing...");
+      await handleScan();
+
       // DEMO MODE: Process locally with <200ms response
       if (isDemoMode) {
         console.log("🎭 Demo mode: Processing locally...");
@@ -287,6 +291,10 @@ export default function Home() {
 
           // VALIDATE: Check if camera device matches scenario requirements
           const cameraDevice = (deviceLabelRef.current || "").toLowerCase();
+          console.log("🔍 Validating device match:");
+          console.log("  - Camera sees:", deviceLabelRef.current);
+          console.log("  - Scenario requires:", scenario.id);
+
           const scenarioRequiresLaptop = scenario.id === 'laptop-tv-hdmi';
           const scenarioRequiresRemote = scenario.id === 'tv-remote-buttons';
           const scenarioRequiresTVBack = scenario.id === 'hdmi-port-damaged';
@@ -294,6 +302,10 @@ export default function Home() {
           const hasLaptop = cameraDevice.includes('laptop') || cameraDevice.includes('macbook') || cameraDevice.includes('notebook');
           const hasRemote = cameraDevice.includes('remote');
           const hasTV = cameraDevice.includes('tv') || cameraDevice.includes('television');
+
+          console.log("  - Has laptop?", hasLaptop);
+          console.log("  - Has remote?", hasRemote);
+          console.log("  - Has TV?", hasTV);
 
           // Check if device matches scenario
           let deviceMismatch = false;
@@ -843,15 +855,16 @@ export default function Home() {
   );
 
   useEffect(() => {
-    // Passive background scanning every 20 seconds (optimized for mobile)
+    // More frequent background scanning for better device detection (every 10 seconds)
     // Skip scanning during active conversation to reduce lag
     const scanInterval = setInterval(() => {
       if (!cameraReady || !audioUnlocked) return;
       // Don't scan if analyzing, listening, or speaking (reduces mobile lag)
       if (!isAnalyzing && !listening && !isSpeakingRef.current) {
+        console.log("🔄 Background scan triggered...");
         handleScan();
       }
-    }, 20000);
+    }, 10000); // Reduced from 20s to 10s for more responsive detection
 
     return () => {
       clearInterval(scanInterval);
@@ -859,11 +872,10 @@ export default function Home() {
   }, [cameraReady, handleScan, isAnalyzing, audioUnlocked, listening]);
 
   useEffect(() => {
-    // Do one initial scan after camera is ready
+    // Do initial scan immediately when camera is ready
     if (cameraReady && audioUnlocked) {
-      setTimeout(() => {
-        handleScan();
-      }, 2000);
+      console.log("📸 Initial camera scan triggered immediately...");
+      handleScan();
     }
   }, [cameraReady, audioUnlocked, handleScan]);
 
@@ -889,6 +901,17 @@ export default function Home() {
           {/* AR Device Overlays */}
           {showGuidancePanel && guidanceSteps[currentStepIndex]?.highlights && (
             <DeviceOverlay highlights={guidanceSteps[currentStepIndex].highlights!} />
+          )}
+
+          {/* Device Detection Indicator */}
+          {deviceLabel && !showGuidancePanel && (
+            <div className="absolute top-20 sm:top-24 left-4 sm:left-6 z-40 pointer-events-none">
+              <div className="px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-black/90 backdrop-blur-xl border border-white/20 shadow-xl">
+                <p className="text-xs sm:text-sm text-white/60 font-light">
+                  📹 <span className="text-white/90">{deviceLabel}</span>
+                </p>
+              </div>
+            </div>
           )}
 
           {/* Listening Indicator */}

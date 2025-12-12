@@ -114,43 +114,59 @@ export async function POST(req: NextRequest) {
             content: [
               {
                 type: "text",
-                text: `IDENTIFY THE DEVICE IN THIS IMAGE.
+                text: `You are an EXPERT device identification system. Your ONLY job is to identify the PRIMARY technical device in the image.
 
-Look for ANY technical device - phones, remotes, laptops, tablets, chargers, cables, game consoles, cameras, headphones, appliances, tools, etc.
+CRITICAL RULES:
+1. Focus on the MAIN device in the center/foreground
+2. Ignore hands, backgrounds, or secondary objects
+3. Be SPECIFIC about device type (Remote vs Laptop vs Phone vs TV)
+4. NEVER guess or assume - only identify what you clearly see
 
-Be specific when you can identify brand/model, but ALWAYS identify the general device type even if you can't tell the exact model.
+DEVICE TYPES TO RECOGNIZE:
+- TV Remote Control (any remote with buttons)
+- Laptop / MacBook / Notebook Computer
+- Phone / iPhone / Android Phone
+- TV / Television
+- Tablet / iPad
+- Gaming Controller / Xbox / PlayStation
+- Cable / HDMI Cable / USB Cable
+- Charger / Power Adapter
+- Headphones / Earbuds
+- Camera / Webcam
+- Smart Watch / Fitness Tracker
 
-EXAMPLES:
-- Phone with visible Apple logo = "iPhone"
-- Phone with Android look = "Android Phone"
-- TV Remote with visible buttons = "TV Remote Control"
-- Laptop with Apple logo = "MacBook"
-- Generic laptop = "Laptop"
-- Cable with USB-C = "USB-C Cable"
-- Any remote = "Remote Control"
-- Any charger = "Phone Charger" or "Laptop Charger"
+IDENTIFICATION PRIORITY:
+1. What IS the device? (Remote? Laptop? Phone?)
+2. What brand? (Apple? Samsung? Generic?)
+3. What model? (Only if clearly visible)
 
-PRIORITY: Get the device TYPE right (phone, remote, laptop, etc.) - specific model is bonus.
+RESPONSE FORMAT (JSON only, no markdown):
 
-If you see a device, respond:
+If device detected:
 {
-  "product_name": "Device type + brand if visible (e.g., 'iPhone', 'Samsung Phone', 'TV Remote Control', 'Xbox Controller')",
-  "category": "general category",
-  "description": "what device and what it looks like",
-  "highlights": ["visible features", "buttons", "ports", "logos"],
+  "product_name": "EXACT device type (e.g., 'TV Remote Control', 'MacBook', 'iPhone')",
+  "category": "Device type category",
+  "description": "Brief description of the device",
+  "highlights": ["visible buttons", "ports", "logos"],
   "is_device": true
 }
 
-If NO device (just background, person, etc.):
+If NO clear device (background, hand only, unclear):
 {
   "product_name": "No device detected",
   "category": "Not a device",
-  "description": "Point camera at your device",
+  "description": "Point camera at device",
   "highlights": [],
   "is_device": false
 }
 
-JSON only, no markdown. Prioritize FINDING devices over being specific.`,
+EXAMPLES:
+- See buttons + remote shape → "TV Remote Control" (NOT "Laptop")
+- See keyboard + screen → "Laptop" (NOT "Remote")
+- See phone shape → "iPhone" or "Android Phone" (NOT "Remote")
+- See large screen → "TV" or "Television" (NOT "Laptop")
+
+BE ACCURATE. BE SPECIFIC. NO GUESSING.`,
               },
               {
                 type: "image_url",
