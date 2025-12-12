@@ -278,11 +278,58 @@ export default function Home() {
       // DEMO MODE: Process locally with <200ms response
       if (isDemoMode) {
         console.log("🎭 Demo mode: Processing locally...");
+        console.log("📹 Camera detected device:", deviceLabelRef.current);
         const startTime = performance.now();
         const { scenario, steps, productCategory: detectedCategory, responseTime } = processDemoInput(transcript);
 
         if (scenario) {
           console.log(`✅ Matched scenario: "${scenario.name}" in ${responseTime.toFixed(2)}ms`);
+
+          // VALIDATE: Check if camera device matches scenario requirements
+          const cameraDevice = (deviceLabelRef.current || "").toLowerCase();
+          const scenarioRequiresLaptop = scenario.id === 'laptop-tv-hdmi';
+          const scenarioRequiresRemote = scenario.id === 'tv-remote-buttons';
+          const scenarioRequiresTVBack = scenario.id === 'hdmi-port-damaged';
+
+          const hasLaptop = cameraDevice.includes('laptop') || cameraDevice.includes('macbook') || cameraDevice.includes('notebook');
+          const hasRemote = cameraDevice.includes('remote');
+          const hasTV = cameraDevice.includes('tv') || cameraDevice.includes('television');
+
+          // Check if device matches scenario
+          let deviceMismatch = false;
+          let mismatchMessage = "";
+
+          if (scenarioRequiresLaptop && !hasLaptop && !hasTV) {
+            deviceMismatch = true;
+            mismatchMessage = "I see you're asking about connecting a laptop to TV, but I don't see those devices yet. Point your camera at the laptop or TV so I can guide you better!";
+          } else if (scenarioRequiresRemote && !hasRemote) {
+            deviceMismatch = true;
+            mismatchMessage = "I see you're asking about remote buttons, but I don't see a remote yet. Point your camera at the TV remote so I can show you which buttons to press!";
+          } else if (scenarioRequiresTVBack && !hasTV) {
+            deviceMismatch = true;
+            mismatchMessage = "I see you're asking about HDMI ports, but I don't see a TV yet. Point your camera at the back of your TV so I can help you locate the ports!";
+          }
+
+          if (deviceMismatch) {
+            console.log("⚠️ Device mismatch - scenario requires different device than camera sees");
+
+            // Smart suggestion: If holding remote but asking about laptop/TV, maybe suggest remote scenario
+            if (hasRemote && (scenarioRequiresLaptop || scenarioRequiresTVBack)) {
+              mismatchMessage = "I see a TV remote! If you need help with the remote buttons, just ask 'what do these buttons do?' Otherwise, point your camera at the laptop or TV for connection help.";
+            }
+
+            setDisplayResponse(mismatchMessage);
+            setStatus(mismatchMessage);
+            enqueueSpeech(mismatchMessage);
+
+            setTimeout(() => {
+              startListening();
+            }, 800);
+
+            return; // Don't show scenario if device doesn't match
+          }
+
+          // Device matches - proceed with scenario
           setCurrentScenario(scenario);
           setGuidanceSteps(steps);
           setCurrentStepIndex(0);
