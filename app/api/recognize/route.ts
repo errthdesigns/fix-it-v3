@@ -155,96 +155,88 @@ export async function POST(req: NextRequest) {
             content: [
               {
                 type: "text",
-                text: `You are an EXPERT computer vision system for device identification with COMPONENT DETECTION.
+                text: `You are an EXPERT computer vision system for technical device identification with COMPONENT DETECTION.
 
 ⚠️ CRITICAL: You MUST return "components" array with bounding boxes for EVERY visible component!
 
-CRITICAL RULES:
-1. ONLY recognize: TV Remote Control, TV/Television, Laptop/MacBook, Phone/iPhone/Android, Tablet/iPad
-2. Focus on MAIN device in center/foreground
-3. **MANDATORY**: Detect ALL visible components (buttons, ports, screens, cameras)
-4. **MANDATORY**: Return BOUNDING BOX coordinates for each component in "components" array
-5. NEVER leave components array empty - detect at least 3-5 components minimum
-6. NEVER guess - only identify what you clearly see
+YOUR MISSION:
+Identify ANY technical device and detect ALL visible components with precise bounding box coordinates.
 
-DEVICE TYPES (ONLY THESE):
-✅ TV Remote Control
-✅ TV / Television
-✅ Laptop / MacBook / Notebook
-✅ Phone / iPhone / Android
+DEVICE TYPES TO RECOGNIZE (ANY technical device):
+✅ TV Remote Control, Gaming Controller (Xbox, PlayStation, etc.)
+✅ TV / Monitor / Display
+✅ Laptop / MacBook / Notebook / Desktop PC
+✅ Phone / iPhone / Android / Smartphone
 ✅ Tablet / iPad
+✅ Smart Speaker / Echo / HomePod / Google Home
+✅ Router / Modem / Network Device
+✅ Camera / Webcam / DSLR / Action Camera
+✅ Headphones / Earbuds / AirPods
+✅ Smart Watch / Fitness Tracker
+✅ Keyboard / Mouse / Trackpad
+✅ Charger / Power Adapter / Power Bank
+✅ Cable / HDMI / USB / Lightning / USB-C
+✅ Game Console / Nintendo Switch / PlayStation / Xbox
+✅ Smart Home Device / Thermostat / Light Bulb / Plug
+✅ Printer / Scanner
+✅ External Drive / SSD / Hard Drive
+✅ Microphone / Audio Interface
+✅ Drone / RC Device
+✅ VR Headset / AR Device
+✅ ANY other technical/electronic device
 
-❌ Reject everything else (gaming controllers, cables, chargers, etc.)
+COMPONENT DETECTION (MANDATORY):
+For EVERY device, identify ALL visible components with bounding boxes:
 
-COMPONENT DETECTION:
-For each device, identify VISIBLE components with bounding boxes:
-
-**Remote Control:**
-- Power button, Volume buttons, Channel buttons
-- Number pad, Menu button, Back button
-- Input/Source button, Netflix/streaming buttons
-
-**TV/Television:**
-- Screen area
-- HDMI ports (1, 2, 3), USB ports
-- Power button, Input button
-
-**Laptop:**
-- Screen, Keyboard, Trackpad
-- USB ports, HDMI port, Power port
-- Webcam, Power button
-
-**Phone/Tablet:**
-- Screen area (main display)
-- Power button (side/top)
-- Volume buttons (side - volume up, volume down)
-- Charging port (bottom)
-- Camera (back/front)
-- SIM tray (if visible)
+**Common Components:**
+- Buttons (power, volume, menu, play, pause, etc.)
+- Ports (USB, HDMI, Lightning, USB-C, audio jack, ethernet, etc.)
+- Screens/Displays
+- Cameras/Lenses
+- Speakers/Grills
+- LEDs/Indicators
+- Antennas
+- Vents/Cooling
+- Logos/Branding
+- Switches/Toggles
+- Dials/Knobs
+- Connectors/Jacks
 
 BOUNDING BOX FORMAT:
 Coordinates as PERCENTAGE of image (0-100):
-- x: distance from LEFT edge
-- y: distance from TOP edge
+- x: distance from LEFT edge (center point)
+- y: distance from TOP edge (center point)
 - width: component width
 - height: component height
 
 RESPONSE FORMAT (JSON only, no markdown):
 
-If supported device detected:
+✅ DEVICE DETECTED (MUST return components):
 {
-  "product_name": "TV Remote Control" | "TV" | "Laptop" | "MacBook" | "iPhone" | "Android Phone" | "iPad",
-  "category": "Remote Control" | "Television" | "Laptop" | "Phone" | "Tablet",
-  "description": "Brief description",
-  "highlights": ["visible features"],
+  "product_name": "Exact device name (e.g., 'Xbox Controller', 'USB-C Cable', 'Amazon Echo')",
+  "category": "Device category (e.g., 'Gaming Controller', 'Cable', 'Smart Speaker')",
+  "description": "Brief description of the device",
+  "highlights": ["visible features", "key components", "notable details"],
   "is_device": true,
   "components": [
     {
-      "name": "Power Button",
-      "type": "button",
-      "x": 48,
-      "y": 12,
-      "width": 8,
-      "height": 6,
+      "name": "Component name (e.g., 'Power Button', 'USB Port', 'Volume Dial')",
+      "type": "button" | "port" | "screen" | "component",
+      "x": 50,
+      "y": 45,
+      "width": 10,
+      "height": 8,
       "confidence": 0.95
     },
-    {
-      "name": "Volume Up",
-      "type": "button",
-      "x": 75,
-      "y": 35,
-      "width": 6,
-      "height": 5,
-      "confidence": 0.88
-    }
+    ... (detect 3-10+ components)
   ]
 }
 
-If unsupported or no device:
+❌ NO DEVICE (only if truly nothing technical visible):
 {
   "product_name": "No device detected",
   "category": "Not a device",
-  "description": "Point camera at remote, TV, laptop, or phone",
+  "description": "Point camera at a technical device",
   "highlights": [],
   "is_device": false,
   "components": []
@@ -252,43 +244,59 @@ If unsupported or no device:
 
 EXAMPLES:
 
-✅ PHONE DETECTED (MUST return components like this):
+✅ GAMING CONTROLLER:
 {
-  "product_name": "iPhone",
-  "category": "Phone",
-  "description": "iPhone smartphone with visible camera and screen",
-  "highlights": ["Triple camera", "Lightning port", "Power button"],
+  "product_name": "Xbox Wireless Controller",
+  "category": "Gaming Controller",
+  "description": "Xbox wireless gaming controller with buttons and joysticks",
+  "highlights": ["A/B/X/Y buttons", "Dual joysticks", "D-pad", "Xbox button"],
   "is_device": true,
   "components": [
-    {"name": "Screen", "type": "screen", "x": 50, "y": 45, "width": 40, "height": 70, "confidence": 0.98},
-    {"name": "Camera", "type": "component", "x": 25, "y": 15, "width": 12, "height": 15, "confidence": 0.95},
-    {"name": "Power Button", "type": "button", "x": 85, "y": 40, "width": 8, "height": 5, "confidence": 0.90},
-    {"name": "Volume Up", "type": "button", "x": 10, "y": 35, "width": 6, "height": 4, "confidence": 0.88},
-    {"name": "Volume Down", "type": "button", "x": 10, "y": 42, "width": 6, "height": 4, "confidence": 0.88},
-    {"name": "Charging Port", "type": "port", "x": 50, "y": 95, "width": 8, "height": 3, "confidence": 0.85}
+    {"name": "A Button", "type": "button", "x": 65, "y": 55, "width": 6, "height": 6, "confidence": 0.95},
+    {"name": "B Button", "type": "button", "x": 72, "y": 48, "width": 6, "height": 6, "confidence": 0.94},
+    {"name": "Xbox Button", "type": "button", "x": 50, "y": 30, "width": 8, "height": 8, "confidence": 0.98},
+    {"name": "Left Joystick", "type": "component", "x": 35, "y": 50, "width": 12, "height": 12, "confidence": 0.92},
+    {"name": "Right Joystick", "type": "component", "x": 65, "y": 70, "width": 12, "height": 12, "confidence": 0.91},
+    {"name": "USB-C Port", "type": "port", "x": 50, "y": 90, "width": 6, "height": 3, "confidence": 0.88}
   ]
 }
 
-✅ REMOTE DETECTED:
+✅ HDMI CABLE:
 {
-  "product_name": "TV Remote Control",
-  "category": "Remote Control",
-  "description": "TV remote control with visible buttons",
-  "highlights": ["Power button", "Volume controls", "Number pad"],
+  "product_name": "HDMI Cable",
+  "category": "Cable",
+  "description": "HDMI cable with connector visible",
+  "highlights": ["HDMI connector", "Cable body"],
   "is_device": true,
   "components": [
-    {"name": "Power Button", "type": "button", "x": 50, "y": 15, "width": 10, "height": 8, "confidence": 0.95},
-    {"name": "Volume Up", "type": "button", "x": 75, "y": 35, "width": 8, "height": 6, "confidence": 0.90},
-    {"name": "Volume Down", "type": "button", "x": 75, "y": 44, "width": 8, "height": 6, "confidence": 0.90},
-    {"name": "Menu Button", "type": "button", "x": 50, "y": 55, "width": 12, "height": 8, "confidence": 0.85}
+    {"name": "HDMI Connector", "type": "port", "x": 30, "y": 50, "width": 15, "height": 20, "confidence": 0.93},
+    {"name": "Cable", "type": "component", "x": 60, "y": 50, "width": 40, "height": 8, "confidence": 0.90}
   ]
 }
 
-❌ UNSUPPORTED DEVICE:
-{"product_name": "No device detected", "category": "Not a device", "description": "Point camera at remote, TV, laptop, or phone", "highlights": [], "is_device": false, "components": []}
+✅ SMART SPEAKER:
+{
+  "product_name": "Amazon Echo",
+  "category": "Smart Speaker",
+  "description": "Amazon Echo smart speaker with light ring",
+  "highlights": ["Light ring", "Speaker grille", "Control buttons"],
+  "is_device": true,
+  "components": [
+    {"name": "Light Ring", "type": "component", "x": 50, "y": 20, "width": 40, "height": 8, "confidence": 0.94},
+    {"name": "Volume Up", "type": "button", "x": 60, "y": 15, "width": 5, "height": 5, "confidence": 0.89},
+    {"name": "Volume Down", "type": "button", "x": 40, "y": 15, "width": 5, "height": 5, "confidence": 0.89},
+    {"name": "Speaker Grille", "type": "component", "x": 50, "y": 60, "width": 45, "height": 50, "confidence": 0.95}
+  ]
+}
 
-⚠️ CRITICAL: ALWAYS return "components" array with at least 3-5 components for supported devices!
-BE ACCURATE. DETECT ALL COMPONENTS. PROVIDE REAL COORDINATES.`,
+⚠️ CRITICAL REQUIREMENTS:
+- ALWAYS return "components" array with at least 3-5 components for ANY device
+- Detect buttons, ports, screens, logos, LEDs - EVERYTHING visible
+- Be accurate with coordinates (percentage-based from center of component)
+- Confidence should reflect actual detection certainty
+- Accept ALL technical devices (cables, chargers, controllers, speakers, etc.)
+
+BE ACCURATE. DETECT ALL COMPONENTS. PROVIDE REAL COORDINATES FOR ANY DEVICE.`,
               },
               {
                 type: "image_url",
