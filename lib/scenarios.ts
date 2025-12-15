@@ -226,31 +226,42 @@ export const DEMO_SCENARIOS: Scenario[] = [
 export function matchScenario(userInput: string): Scenario | null {
   const normalized = userInput.toLowerCase().trim();
 
+  console.log("🔍 Matching user input:", normalized);
+
   for (const scenario of DEMO_SCENARIOS) {
     for (const trigger of scenario.triggers) {
       // Direct substring match - ultra fast
       if (normalized.includes(trigger)) {
+        console.log(`✅ Direct match: "${trigger}" → ${scenario.name}`);
         return scenario;
       }
 
       // Fuzzy match: allow 1-2 missing words
-      const triggerWords = trigger.split(' ');
-      const inputWords = normalized.split(' ');
+      const triggerWords = trigger.split(' ').filter(w => w.length > 2); // Ignore short words
+      const inputWords = normalized.split(' ').filter(w => w.length > 2);
 
       let matchCount = 0;
       for (const word of triggerWords) {
-        if (inputWords.some(iw => iw.includes(word) || word.includes(iw))) {
+        // Stricter matching: word must be at least 50% similar (not just substring)
+        if (inputWords.some(iw =>
+          iw === word || // Exact match
+          (iw.length >= 4 && word.length >= 4 && iw.includes(word)) || // Longer word substring
+          (word.length >= 4 && iw.length >= 4 && word.includes(iw))
+        )) {
           matchCount++;
         }
       }
 
-      // Match if >70% of trigger words present
-      if (matchCount / triggerWords.length >= 0.7) {
+      // Match if >80% of trigger words present (increased from 70%)
+      const matchRatio = triggerWords.length > 0 ? matchCount / triggerWords.length : 0;
+      if (matchRatio >= 0.8) {
+        console.log(`✅ Fuzzy match (${(matchRatio * 100).toFixed(0)}%): "${trigger}" → ${scenario.name}`);
         return scenario;
       }
     }
   }
 
+  console.log("❌ No scenario matched for:", normalized);
   return null;
 }
 
