@@ -1,12 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 
+type ComponentBox = {
+  name: string;
+  type: 'button' | 'port' | 'screen' | 'component';
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  confidence: number;
+};
+
 type RecognitionPayload = {
   description: string;
   shortDescription: string;
   highlights: string[];
   category: string;
   deviceFound: boolean;
+  components?: ComponentBox[];
   raw?: string;
 };
 
@@ -52,6 +63,34 @@ const parseResult = (parsed: Record<string, unknown>): RecognitionPayload => {
       ? (parsed.product_name as string).trim()
       : category.slice(0, 40).trim();
 
+  // Parse component bounding boxes from vision detection
+  const components: ComponentBox[] = [];
+  if (Array.isArray(parsed?.components)) {
+    for (const comp of parsed.components) {
+      if (typeof comp === 'object' && comp !== null) {
+        const c = comp as Record<string, unknown>;
+        if (
+          typeof c.name === 'string' &&
+          typeof c.type === 'string' &&
+          typeof c.x === 'number' &&
+          typeof c.y === 'number' &&
+          typeof c.width === 'number' &&
+          typeof c.height === 'number'
+        ) {
+          components.push({
+            name: c.name,
+            type: (c.type as ComponentBox['type']),
+            x: c.x,
+            y: c.y,
+            width: c.width,
+            height: c.height,
+            confidence: typeof c.confidence === 'number' ? c.confidence : 0.8,
+          });
+        }
+      }
+    }
+  }
+
   // Device is found if is_device is not explicitly false and we have valid data
   const deviceFound = isDevice &&
     category !== "Not a device" &&
@@ -66,6 +105,7 @@ const parseResult = (parsed: Record<string, unknown>): RecognitionPayload => {
     highlights: highlights.slice(0, 5),
     shortDescription: shortDescription || "Device detected",
     deviceFound,
+    components: components.length > 0 ? components : undefined,
     raw: JSON.stringify(parsed),
   };
 };
@@ -76,6 +116,7 @@ const fallbackResult = (message: string): RecognitionPayload => ({
   highlights: [],
   shortDescription: "No device detected",
   deviceFound: false,
+  components: [],
   raw: message,
 });
 
@@ -114,59 +155,102 @@ export async function POST(req: NextRequest) {
             content: [
               {
                 type: "text",
-                text: `You are an EXPERT device identification system. Your ONLY job is to identify the PRIMARY technical device in the image.
+                text: `You are an EXPERT computer vision system for device identification with COMPONENT DETECTION.
 
 CRITICAL RULES:
-1. Focus on the MAIN device in the center/foreground
-2. Ignore hands, backgrounds, or secondary objects
-3. Be SPECIFIC about device type (Remote vs Laptop vs Phone vs TV)
-4. NEVER guess or assume - only identify what you clearly see
+1. ONLY recognize: TV Remote Control, TV/Television, Laptop/MacBook, Phone/iPhone/Android, Tablet/iPad
+2. Focus on MAIN device in center/foreground
+3. Detect ALL visible components (buttons, ports, screens)
+4. Return BOUNDING BOX coordinates for each component
+5. NEVER guess - only identify what you clearly see
 
-DEVICE TYPES TO RECOGNIZE:
-- TV Remote Control (any remote with buttons)
-- Laptop / MacBook / Notebook Computer
-- Phone / iPhone / Android Phone
-- TV / Television
-- Tablet / iPad
-- Gaming Controller / Xbox / PlayStation
-- Cable / HDMI Cable / USB Cable
-- Charger / Power Adapter
-- Headphones / Earbuds
-- Camera / Webcam
-- Smart Watch / Fitness Tracker
+DEVICE TYPES (ONLY THESE):
+✅ TV Remote Control
+✅ TV / Television
+✅ Laptop / MacBook / Notebook
+✅ Phone / iPhone / Android
+✅ Tablet / iPad
 
-IDENTIFICATION PRIORITY:
-1. What IS the device? (Remote? Laptop? Phone?)
-2. What brand? (Apple? Samsung? Generic?)
-3. What model? (Only if clearly visible)
+❌ Reject everything else (gaming controllers, cables, chargers, etc.)
+
+COMPONENT DETECTION:
+For each device, identify VISIBLE components with bounding boxes:
+
+**Remote Control:**
+- Power button, Volume buttons, Channel buttons
+- Number pad, Menu button, Back button
+- Input/Source button, Netflix/streaming buttons
+
+**TV/Television:**
+- Screen area
+- HDMI ports (1, 2, 3), USB ports
+- Power button, Input button
+
+**Laptop:**
+- Screen, Keyboard, Trackpad
+- USB ports, HDMI port, Power port
+- Webcam, Power button
+
+**Phone/Tablet:**
+- Screen, Power button, Volume buttons
+- Charging port, Camera
+
+BOUNDING BOX FORMAT:
+Coordinates as PERCENTAGE of image (0-100):
+- x: distance from LEFT edge
+- y: distance from TOP edge
+- width: component width
+- height: component height
 
 RESPONSE FORMAT (JSON only, no markdown):
 
-If device detected:
+If supported device detected:
 {
-  "product_name": "EXACT device type (e.g., 'TV Remote Control', 'MacBook', 'iPhone')",
-  "category": "Device type category",
-  "description": "Brief description of the device",
-  "highlights": ["visible buttons", "ports", "logos"],
-  "is_device": true
+  "product_name": "TV Remote Control" | "TV" | "Laptop" | "MacBook" | "iPhone" | "Android Phone" | "iPad",
+  "category": "Remote Control" | "Television" | "Laptop" | "Phone" | "Tablet",
+  "description": "Brief description",
+  "highlights": ["visible features"],
+  "is_device": true,
+  "components": [
+    {
+      "name": "Power Button",
+      "type": "button",
+      "x": 48,
+      "y": 12,
+      "width": 8,
+      "height": 6,
+      "confidence": 0.95
+    },
+    {
+      "name": "Volume Up",
+      "type": "button",
+      "x": 75,
+      "y": 35,
+      "width": 6,
+      "height": 5,
+      "confidence": 0.88
+    }
+  ]
 }
 
-If NO clear device (background, hand only, unclear):
+If unsupported or no device:
 {
   "product_name": "No device detected",
   "category": "Not a device",
-  "description": "Point camera at device",
+  "description": "Point camera at remote, TV, laptop, or phone",
   "highlights": [],
-  "is_device": false
+  "is_device": false,
+  "components": []
 }
 
 EXAMPLES:
-- See buttons + remote shape → "TV Remote Control" (NOT "Laptop")
-- See keyboard + screen → "Laptop" (NOT "Remote")
-- See phone shape → "iPhone" or "Android Phone" (NOT "Remote")
-- See large screen → "TV" or "Television" (NOT "Laptop")
+✅ See remote with buttons → Identify device + detect each button location
+✅ See TV with HDMI ports → Identify TV + detect port locations
+✅ See laptop → Identify laptop + detect ports, screen, keyboard
+❌ See gaming controller → Reject ("No device detected")
+❌ See cable → Reject ("No device detected")
 
-BE ACCURATE. BE SPECIFIC. NO GUESSING.`,
+BE ACCURATE. DETECT ALL COMPONENTS. PROVIDE REAL COORDINATES.`,
               },
               {
                 type: "image_url",

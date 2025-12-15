@@ -6,7 +6,7 @@ import CurrysRecommendationPanel from "@/components/CurrysRecommendationPanel";
 import SwipeableProductSheet from "@/components/SwipeableProductSheet";
 import DeviceOverlay from "@/components/DeviceOverlay";
 import { processDemoInput, shouldShowCurrysProducts } from "@/lib/demoMode";
-import { GuidanceStep, Scenario, ProductCategory } from "@/lib/types";
+import { GuidanceStep, Scenario, ProductCategory, DetectedComponent } from "@/lib/types";
 
 type SpeechRecognitionAlternativeLike = {
   transcript: string;
@@ -50,6 +50,15 @@ type RecognitionResult = {
   category: string;
   raw?: string;
   deviceFound: boolean;
+  components?: Array<{
+    name: string;
+    type: 'button' | 'port' | 'screen' | 'component';
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    confidence: number;
+  }>;
 };
 
 export default function Home() {
@@ -96,6 +105,7 @@ export default function Home() {
   const [showCurrysPanel, setShowCurrysPanel] = useState(false);
   const [productCategory, setProductCategory] = useState<ProductCategory | null>(null);
   const [showProductSheet, setShowProductSheet] = useState(false);
+  const [detectedComponents, setDetectedComponents] = useState<DetectedComponent[]>([]);
 
   const recordAction = useCallback(
     (message: string) => {
@@ -803,6 +813,7 @@ export default function Home() {
             category: recognitionData.category ?? "Product",
             raw: recognitionData.raw ?? "",
             deviceFound: recognitionData.deviceFound ?? true,
+            components: recognitionData.components ?? [],
           };
 
           lastRecognitionRef.current = {
@@ -827,6 +838,23 @@ export default function Home() {
 
         console.log("🔍 DEVICE DETECTED:", structuredResult.shortDescription);
         console.log("📱 Device data:", structuredResult);
+
+        // Store detected components for real-time overlays
+        if (structuredResult.components && structuredResult.components.length > 0) {
+          console.log(`✨ Found ${structuredResult.components.length} components:`, structuredResult.components);
+          setDetectedComponents(structuredResult.components.map((comp, idx) => ({
+            id: `comp-${idx}`,
+            name: comp.name,
+            type: comp.type,
+            x: comp.x,
+            y: comp.y,
+            width: comp.width,
+            height: comp.height,
+            confidence: comp.confidence,
+          })));
+        } else {
+          setDetectedComponents([]);
+        }
 
         // Only update status if not currently listening or speaking
         if (!listening && !isSpeakingRef.current) {
@@ -855,16 +883,16 @@ export default function Home() {
   );
 
   useEffect(() => {
-    // More frequent background scanning for better device detection (every 10 seconds)
-    // Skip scanning during active conversation to reduce lag
+    // Continuous scanning for real-time component detection (every 3 seconds)
+    // This enables live computer vision overlays on the camera feed
     const scanInterval = setInterval(() => {
       if (!cameraReady || !audioUnlocked) return;
       // Don't scan if analyzing, listening, or speaking (reduces mobile lag)
       if (!isAnalyzing && !listening && !isSpeakingRef.current) {
-        console.log("🔄 Background scan triggered...");
+        console.log("🔄 Continuous scan triggered...");
         handleScan();
       }
-    }, 10000); // Reduced from 20s to 10s for more responsive detection
+    }, 3000); // Fast scanning for real-time overlays
 
     return () => {
       clearInterval(scanInterval);
@@ -898,7 +926,22 @@ export default function Home() {
             playsInline
           />
 
-          {/* AR Device Overlays */}
+          {/* AR Device Overlays - Real-time Computer Vision */}
+          {detectedComponents.length > 0 && !showGuidancePanel && (
+            <DeviceOverlay
+              highlights={detectedComponents.map((comp) => ({
+                x: comp.x,
+                y: comp.y,
+                width: comp.width,
+                height: comp.height,
+                label: comp.name,
+                shape: comp.type === 'button' ? 'circle' : comp.type === 'port' ? 'port' : 'rect',
+                pulse: comp.confidence > 0.85,
+              }))}
+            />
+          )}
+
+          {/* AR Device Overlays - Demo Mode (Scenario Highlights) */}
           {showGuidancePanel && guidanceSteps[currentStepIndex]?.highlights && (
             <DeviceOverlay highlights={guidanceSteps[currentStepIndex].highlights!} />
           )}

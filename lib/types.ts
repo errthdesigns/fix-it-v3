@@ -13,6 +13,17 @@ export interface DeviceHighlight {
   pulse?: boolean; // Whether to animate with pulse
 }
 
+export interface DetectedComponent {
+  id: string;
+  name: string; // "Power Button", "Volume Up", "HDMI Port 1"
+  type: 'button' | 'port' | 'screen' | 'component';
+  x: number; // Percentage from left (0-100)
+  y: number; // Percentage from top (0-100)
+  width: number; // Width in percentage
+  height: number; // Height in percentage
+  confidence: number; // 0-1
+}
+
 export interface GuidanceStep {
   id: string;
   title: string;
