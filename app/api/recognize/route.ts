@@ -157,12 +157,15 @@ export async function POST(req: NextRequest) {
                 type: "text",
                 text: `You are an EXPERT computer vision system for device identification with COMPONENT DETECTION.
 
+⚠️ CRITICAL: You MUST return "components" array with bounding boxes for EVERY visible component!
+
 CRITICAL RULES:
 1. ONLY recognize: TV Remote Control, TV/Television, Laptop/MacBook, Phone/iPhone/Android, Tablet/iPad
 2. Focus on MAIN device in center/foreground
-3. Detect ALL visible components (buttons, ports, screens)
-4. Return BOUNDING BOX coordinates for each component
-5. NEVER guess - only identify what you clearly see
+3. **MANDATORY**: Detect ALL visible components (buttons, ports, screens, cameras)
+4. **MANDATORY**: Return BOUNDING BOX coordinates for each component in "components" array
+5. NEVER leave components array empty - detect at least 3-5 components minimum
+6. NEVER guess - only identify what you clearly see
 
 DEVICE TYPES (ONLY THESE):
 ✅ TV Remote Control
@@ -192,8 +195,12 @@ For each device, identify VISIBLE components with bounding boxes:
 - Webcam, Power button
 
 **Phone/Tablet:**
-- Screen, Power button, Volume buttons
-- Charging port, Camera
+- Screen area (main display)
+- Power button (side/top)
+- Volume buttons (side - volume up, volume down)
+- Charging port (bottom)
+- Camera (back/front)
+- SIM tray (if visible)
 
 BOUNDING BOX FORMAT:
 Coordinates as PERCENTAGE of image (0-100):
@@ -244,12 +251,43 @@ If unsupported or no device:
 }
 
 EXAMPLES:
-✅ See remote with buttons → Identify device + detect each button location
-✅ See TV with HDMI ports → Identify TV + detect port locations
-✅ See laptop → Identify laptop + detect ports, screen, keyboard
-❌ See gaming controller → Reject ("No device detected")
-❌ See cable → Reject ("No device detected")
 
+✅ PHONE DETECTED (MUST return components like this):
+{
+  "product_name": "iPhone",
+  "category": "Phone",
+  "description": "iPhone smartphone with visible camera and screen",
+  "highlights": ["Triple camera", "Lightning port", "Power button"],
+  "is_device": true,
+  "components": [
+    {"name": "Screen", "type": "screen", "x": 50, "y": 45, "width": 40, "height": 70, "confidence": 0.98},
+    {"name": "Camera", "type": "component", "x": 25, "y": 15, "width": 12, "height": 15, "confidence": 0.95},
+    {"name": "Power Button", "type": "button", "x": 85, "y": 40, "width": 8, "height": 5, "confidence": 0.90},
+    {"name": "Volume Up", "type": "button", "x": 10, "y": 35, "width": 6, "height": 4, "confidence": 0.88},
+    {"name": "Volume Down", "type": "button", "x": 10, "y": 42, "width": 6, "height": 4, "confidence": 0.88},
+    {"name": "Charging Port", "type": "port", "x": 50, "y": 95, "width": 8, "height": 3, "confidence": 0.85}
+  ]
+}
+
+✅ REMOTE DETECTED:
+{
+  "product_name": "TV Remote Control",
+  "category": "Remote Control",
+  "description": "TV remote control with visible buttons",
+  "highlights": ["Power button", "Volume controls", "Number pad"],
+  "is_device": true,
+  "components": [
+    {"name": "Power Button", "type": "button", "x": 50, "y": 15, "width": 10, "height": 8, "confidence": 0.95},
+    {"name": "Volume Up", "type": "button", "x": 75, "y": 35, "width": 8, "height": 6, "confidence": 0.90},
+    {"name": "Volume Down", "type": "button", "x": 75, "y": 44, "width": 8, "height": 6, "confidence": 0.90},
+    {"name": "Menu Button", "type": "button", "x": 50, "y": 55, "width": 12, "height": 8, "confidence": 0.85}
+  ]
+}
+
+❌ UNSUPPORTED DEVICE:
+{"product_name": "No device detected", "category": "Not a device", "description": "Point camera at remote, TV, laptop, or phone", "highlights": [], "is_device": false, "components": []}
+
+⚠️ CRITICAL: ALWAYS return "components" array with at least 3-5 components for supported devices!
 BE ACCURATE. DETECT ALL COMPONENTS. PROVIDE REAL COORDINATES.`,
               },
               {
@@ -262,8 +300,8 @@ BE ACCURATE. DETECT ALL COMPONENTS. PROVIDE REAL COORDINATES.`,
             ],
           },
         ],
-        max_tokens: 250,
-        temperature: 0.3,
+        max_tokens: 1000, // Increased for component detection (was 250 - too low for bounding boxes!)
+        temperature: 0.2, // Lower temp for more consistent coordinate detection
       });
     } catch (apiError) {
       console.error("OpenAI API error:", apiError);
@@ -297,14 +335,21 @@ BE ACCURATE. DETECT ALL COMPONENTS. PROVIDE REAL COORDINATES.`,
     }
 
     const cleaned = serialized.replace(/```json\s*/gi, "").replace(/```\s*/g, "").trim();
-    console.log("OpenAI vision response:", cleaned);
+    console.log("🔍 OpenAI vision RAW response:", cleaned);
 
     let normalized: RecognitionPayload;
     try {
       const parsed = JSON.parse(cleaned);
-      console.log("Parsed JSON:", parsed);
+      console.log("📊 Parsed JSON:", parsed);
+      console.log("📦 Components in response:", parsed?.components || "NONE");
       normalized = parseResult(parsed as Record<string, unknown>);
-      console.log("Normalized result - deviceFound:", normalized.deviceFound);
+      console.log("✅ Normalized result:");
+      console.log("  - Device found:", normalized.deviceFound);
+      console.log("  - Device name:", normalized.shortDescription);
+      console.log("  - Components detected:", normalized.components?.length || 0);
+      if (normalized.components && normalized.components.length > 0) {
+        console.log("  - Component details:", normalized.components);
+      }
     } catch (parseError) {
       console.warn("Vision parse fallback:", parseError);
       normalized = fallbackResult(cleaned);
